@@ -328,11 +328,11 @@ mod tests {
 
     // Embed compiled WASM at test-compile time.
     mod amm_wasm {
-        soroban_sdk::contractimport!(file = "/Users/mac/Work/Wave/soroban-amm/contracts/factory/src/amm.wasm");
+        soroban_sdk::contractimport!(file = "../../../target/wasm32v1-none/release/amm.wasm");
     }
 
     mod token_wasm {
-        soroban_sdk::contractimport!(file = "/Users/mac/Work/Wave/soroban-amm/contracts/factory/src/token.wasm");
+        soroban_sdk::contractimport!(file = "../../../target/wasm32v1-none/release/token.wasm");
     }
 
     #[test]
