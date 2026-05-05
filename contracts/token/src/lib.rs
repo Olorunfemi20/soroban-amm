@@ -6,7 +6,10 @@ use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env, St
 
 // Export compiled WASM for tests/dev usage when the `testutils` feature is enabled.
 #[cfg(feature = "testutils")]
-pub const WASM: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/wasm32v1-none/release/token.wasm"));
+pub const WASM: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../target/wasm32v1-none/release/token.wasm"
+));
 
 #[contracttype]
 pub enum DataKey {

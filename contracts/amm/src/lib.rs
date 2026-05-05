@@ -15,7 +15,10 @@ use soroban_sdk::{
 };
 // Export compiled WASM for tests/dev usage when the `testutils` feature is enabled.
 #[cfg(feature = "testutils")]
-pub const WASM: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/wasm32v1-none/release/amm.wasm"));
+pub const WASM: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../target/wasm32v1-none/release/amm.wasm"
+));
 // Standard SEP-41 interface for pool tokens (token_a, token_b)
 use soroban_sdk::token::Client as SepTokenClient;
 
