@@ -106,7 +106,6 @@ pub enum ProposalKind {
     UnpausePool,
 }
 
-
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Proposal {
@@ -236,16 +235,21 @@ impl Governance {
                 assert!((0..=MAX_BPS).contains(new_fee_bps), "invalid fee");
             }
             ProposalKind::UpdateProtocolFee(params) => {
-                assert!((0..=MAX_BPS).contains(&params.new_bps), "invalid protocol fee bps");
+                assert!(
+                    (0..=MAX_BPS).contains(&params.new_bps),
+                    "invalid protocol fee bps"
+                );
             }
             ProposalKind::UpdateFlashLoanFee(new_bps) => {
-                assert!((0..=MAX_BPS).contains(new_bps), "invalid flash loan fee bps");
+                assert!(
+                    (0..=MAX_BPS).contains(new_bps),
+                    "invalid flash loan fee bps"
+                );
             }
             ProposalKind::TransferAdmin(_new_admin) => {}
             ProposalKind::PausePool => {}
             ProposalKind::UnpausePool => {}
         }
-
 
         let lp_token: Address = env.storage().instance().get(&DataKey::LpToken).unwrap();
         let lp_client = LpTokenClient::new(&env, &lp_token);
@@ -429,7 +433,6 @@ impl Governance {
                 amm_client.unpause();
             }
         }
-
 
         proposal.executed = true;
         env.storage().persistent().set(&proposal_key, &proposal);
@@ -919,7 +922,12 @@ mod tests {
         let proposed_data: (u32, Address, ProposalKind, u64) = proposed_evt.2.into_val(&s.env);
         assert_eq!(
             proposed_data,
-            (pid, lp1.clone(), ProposalKind::UpdateFee(50), proposal.vote_end)
+            (
+                pid,
+                lp1.clone(),
+                ProposalKind::UpdateFee(50),
+                proposal.vote_end
+            )
         );
 
         gov.vote(&lp1, &pid, &true);
@@ -989,7 +997,13 @@ mod tests {
 
         // --- 4. Test UpdateProtocolFee proposal ---
         let recipient = Address::generate(&s.env);
-        let pid4 = gov.propose(&lp1, &ProposalKind::UpdateProtocolFee(UpdateProtocolFeeParams { new_bps: 10, new_recipient: recipient.clone() }));
+        let pid4 = gov.propose(
+            &lp1,
+            &ProposalKind::UpdateProtocolFee(UpdateProtocolFeeParams {
+                new_bps: 10,
+                new_recipient: recipient.clone(),
+            }),
+        );
         gov.vote(&lp1, &pid4, &true);
         let prop4 = gov.get_proposal(&pid4);
         s.env.ledger().set_timestamp(prop4.execute_after + 1);
@@ -1000,4 +1014,3 @@ mod tests {
         gov.unlock_vote(&lp1, &pid4);
     }
 }
-

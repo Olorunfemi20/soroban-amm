@@ -320,7 +320,6 @@ impl AmmPool {
         );
     }
 
-
     /// Nominate a new admin. The nominee must call `accept_admin` to complete the transfer.
     ///
     /// # Panics
