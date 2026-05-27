@@ -178,6 +178,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "concentrated_liquidity"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -487,6 +494,7 @@ name = "factory"
 version = "0.1.0"
 dependencies = [
  "amm",
+ "governance",
  "soroban-sdk",
  "token",
 ]
@@ -591,6 +599,7 @@ name = "governance"
 version = "0.1.0"
 dependencies = [
  "amm",
+ "proptest",
  "soroban-sdk",
  "token",
 ]

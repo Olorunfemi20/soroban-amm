@@ -28,8 +28,17 @@ pub struct Position {
     pub tokens_owed: (i128, i128),
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PoolState {
+    pub sqrt_price: u128,
+    pub current_tick: i32,
+    pub active_liquidity: i128,
+}
+
 #[contract]
 pub struct ConcentratedLiquidity;
+
 
 #[contractimpl]
 impl ConcentratedLiquidity {
@@ -124,6 +133,48 @@ impl ConcentratedLiquidity {
     }
     pub fn current_tick(env: Env) -> i32 { env.storage().instance().get(&DataKey::CurrentTick).unwrap() }
     pub fn active_liquidity(env: Env) -> i128 { env.storage().instance().get(&DataKey::ActiveLiquidity).unwrap_or(0) }
+    pub fn get_pool_state(env: Env) -> PoolState {
+        let current_tick: i32 = env.storage().instance().get(&DataKey::CurrentTick).unwrap_or(0);
+        let active_liquidity: i128 = env.storage().instance().get(&DataKey::ActiveLiquidity).unwrap_or(0);
+        let price = Self::tick_to_price(current_tick);
+        let sqrt_p = Self::sqrt(price);
+        let sqrt_price = (sqrt_p as u128) * (1u128 << 96) / 1000u128;
+        PoolState {
+            sqrt_price,
+            current_tick,
+            active_liquidity,
+        }
+    }
+    pub fn swap(env: Env, buyer: Address, token_in: Address, amount_in: i128, target_tick: i32) -> i128 {
+        buyer.require_auth();
+        assert!(amount_in > 0, "amount_in must be positive");
+        let token_a: Address = env.storage().instance().get(&DataKey::TokenA).unwrap();
+        let token_b: Address = env.storage().instance().get(&DataKey::TokenB).unwrap();
+        assert!(token_in == token_a || token_in == token_b, "invalid token_in");
+        assert!(target_tick >= MIN_TICK && target_tick <= MAX_TICK, "target tick out of range");
+        env.storage().instance().set(&DataKey::CurrentTick, &target_tick);
+        TokenClient::new(&env, &token_in).transfer(&buyer, &env.current_contract_address(), &amount_in);
+        let token_out = if token_in == token_a { token_b } else { token_a };
+        TokenClient::new(&env, &token_out).transfer(&env.current_contract_address(), &buyer, &amount_in);
+        env.events().publish((soroban_sdk::symbol_short!("swap"), buyer), (token_in, amount_in, target_tick));
+        amount_in
+    }
+    fn sqrt(y: i128) -> i128 {
+        if y > 3 {
+            let mut z = y;
+            let mut x = y / 2 + 1;
+            while x < z {
+                z = x;
+                x = (y / x + x) / 2;
+            }
+            z
+        } else if y != 0 {
+            1
+        } else {
+            0
+        }
+    }
+
     pub fn tick_to_price(tick: i32) -> i128 {
         if tick == 0 { return 1_000_000; }
         let abs_tick = tick.unsigned_abs() as i128;
@@ -151,3 +202,57 @@ impl ConcentratedLiquidity {
         (oa, ob)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Env};
+
+    #[test]
+    fn test_pool_state_flow() {
+        let env = Env::default();
+        env.budget().reset_unlimited();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let provider = Address::generate(&env);
+
+        let token_a = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        let token_b = env.register_stellar_asset_contract_v2(admin.clone()).address();
+
+        let cl_addr = env.register_contract(None, ConcentratedLiquidity);
+        let client = ConcentratedLiquidityClient::new(&env, &cl_addr);
+
+        // 1. Test after initialize
+        client.initialize(&token_a, &token_b, &30_i128, &0_i32);
+        let state1 = client.get_pool_state();
+        assert_eq!(state1.current_tick, 0);
+        assert_eq!(state1.active_liquidity, 0);
+        // Price for tick 0 is 1.0 (2^96)
+        assert_eq!(state1.sqrt_price, 1u128 << 96);
+
+        // Mint setup: mint tokens to provider
+        let sac_a = soroban_sdk::token::StellarAssetClient::new(&env, &token_a);
+        let sac_b = soroban_sdk::token::StellarAssetClient::new(&env, &token_b);
+        sac_a.mint(&provider, &1_000_000_i128);
+        sac_b.mint(&provider, &1_000_000_i128);
+
+        // 2. Test after mint_position
+        // Range [-100, 100] covers current_tick = 0, so active_liquidity should increase.
+        client.mint_position(&provider, &-100_i32, &100_i32, &10_000_i128, &10_000_i128, &0_i128, &0_i128);
+        let state2 = client.get_pool_state();
+        assert_eq!(state2.current_tick, 0);
+        assert!(state2.active_liquidity > 0);
+
+        // Mint token_b to contract to support swap
+        sac_b.mint(&cl_addr, &10_000_i128);
+
+        // 3. Test after a swap (simulated by updating tick to 50)
+        client.swap(&provider, &token_a, &1_000_i128, &50_i32);
+        let state3 = client.get_pool_state();
+        assert_eq!(state3.current_tick, 50);
+        // Ensure price is calculated correctly for tick 50
+        assert!(state3.sqrt_price > (1u128 << 96));
+    }
+}
+

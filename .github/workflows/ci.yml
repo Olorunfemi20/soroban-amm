@@ -34,3 +34,7 @@ jobs:
 
       - name: Format check
         run: cargo fmt --all -- --check
+
+      - name: Check docs
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+

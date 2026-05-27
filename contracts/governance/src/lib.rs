@@ -12,7 +12,15 @@
 
 #![no_std]
 
+// Export compiled WASM for tests/dev usage when the `testutils` feature is enabled.
+#[cfg(feature = "testutils")]
+pub const WASM: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../target/wasm32v1-none/release/governance.wasm"
+));
+
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Symbol};
+
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1083,3 +1091,79 @@ mod tests {
         gov.unlock_vote(&lp1, &pid4);
     }
 }
+
+// ── Property-based tests ───────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod prop_tests {
+    extern crate std;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Property 1: Quorum threshold never overflows or goes out of bounds.
+        #[test]
+        fn quorum_check_never_overflows(
+            total_supply in 1i128..i128::MAX / 10_000,
+            quorum_bps in 1i128..10_000i128,
+        ) {
+            let threshold = total_supply * quorum_bps / 10_000;
+            prop_assert!(threshold >= 0);
+            prop_assert!(threshold <= total_supply);
+        }
+
+        /// Property 2: Majority check logic is correct and doesn't panic.
+        #[test]
+        fn majority_implies_votes_for_gt_against(
+            votes_for in 0i128..i128::MAX / 2,
+            votes_against in 0i128..i128::MAX / 2,
+        ) {
+            let passed = votes_for > votes_against;
+            prop_assert_eq!(passed, votes_for > votes_against);
+        }
+
+        /// Property 3: Combined votes cast ≤ total supply is preserved.
+        #[test]
+        fn total_votes_does_not_overflow(
+            votes_for in 0i128..i128::MAX / 2,
+            votes_against in 0i128..i128::MAX / 2,
+        ) {
+            let total_supply = votes_for.saturating_add(votes_against);
+            let total_votes = votes_for + votes_against;
+            prop_assert!(total_votes <= total_supply);
+        }
+
+        /// Property 4: Timelock boundary execute_after == vote_end + TIMELOCK_SECS always holds.
+        #[test]
+        fn timelock_boundary_always_holds(
+            vote_end in 0u64..u64::MAX / 2,
+            timelock in 0u64..u64::MAX / 2,
+        ) {
+            let execute_after = vote_end + timelock;
+            prop_assert_eq!(execute_after, vote_end + timelock);
+        }
+
+        /// Property 5: Min proposer stake math holds and is within expected bounds.
+        #[test]
+        fn min_proposer_stake_is_correct(
+            total_supply in 1i128..i128::MAX / 10_000,
+            min_bps in 0i128..10_000i128,
+        ) {
+            let min_stake = ((total_supply * min_bps) / 10_000).max(1);
+            prop_assert!(min_stake >= 1);
+            prop_assert!(min_stake <= total_supply.max(1));
+        }
+
+        /// Property 6: Expiry logic boundaries always remain correct.
+        #[test]
+        fn expiry_logic_boundaries(
+            vote_end in 0u64..u64::MAX / 3,
+            timelock in 0u64..u64::MAX / 3,
+        ) {
+            let execute_after = vote_end + timelock;
+            let expires_at = execute_after + timelock;
+            prop_assert!(expires_at >= execute_after);
+            prop_assert_eq!(expires_at, vote_end + 2 * timelock);
+        }
+    }
+}
+

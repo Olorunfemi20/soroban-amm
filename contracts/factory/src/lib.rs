@@ -37,6 +37,22 @@ pub trait LpTokenInterface {
         symbol: soroban_sdk::String,
         decimals: u32,
     );
+    fn set_locker(env: Env, locker: Address);
+}
+
+#[contractclient(name = "GovernanceClient")]
+pub trait GovernanceInterface {
+    #[allow(clippy::too_many_arguments)]
+    fn initialize(
+        env: Env,
+        admin: Address,
+        amm_pool: Address,
+        lp_token: Address,
+        voting_period_secs: u64,
+        timelock_secs: u64,
+        quorum_bps: i128,
+        min_proposer_stake_bps: i128,
+    );
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
@@ -50,7 +66,9 @@ pub enum DataKey {
     AmmWasmHash,
     TokenWasmHash,
     PoolCount, // u64 monotonic counter — used to derive unique deploy salts
+    GovernanceFor(Address), // pool address → Option<Address>
 }
+
 
 // ── Contract ──────────────────────────────────────────────────────────────────
 
@@ -104,9 +122,8 @@ impl Factory {
         token_a: Address,
         token_b: Address,
         fee_bps: i128,
-        lp_name: Option<soroban_sdk::String>,
-        lp_symbol: Option<soroban_sdk::String>,
-    ) -> Address {
+        governance_wasm_hash: Option<BytesN<32>>,
+    ) -> (Address, Option<Address>) {
         // Normalise: smaller address is always token_a.
         let (ta, tb) = if token_a < token_b {
             (token_a, token_b)
@@ -135,7 +152,8 @@ impl Factory {
             .unwrap();
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
 
-        // Derive two unique salts per pool from a monotonic counter.
+        // Derive salts per pool from a monotonic counter.
+        // We use n * 3 for LP salt, n * 3 + 1 for Pool salt, n * 3 + 2 for Governance salt.
         let n: u64 = env
             .storage()
             .instance()
@@ -143,8 +161,8 @@ impl Factory {
             .unwrap_or(0);
         env.storage().instance().set(&DataKey::PoolCount, &(n + 1));
 
-        let lp_salt = Self::make_salt(&env, n * 2);
-        let pool_salt = Self::make_salt(&env, n * 2 + 1);
+        let lp_salt = Self::make_salt(&env, n * 3);
+        let pool_salt = Self::make_salt(&env, n * 3 + 1);
 
         // Deploy LP token then AMM pool.
         let lp_addr = env
@@ -156,16 +174,42 @@ impl Factory {
             .with_current_contract(pool_salt)
             .deploy(amm_wasm);
 
-        // Resolve LP token name/symbol — use caller-supplied values or counter defaults.
-        let name = lp_name.unwrap_or_else(|| Self::counter_string(&env, b"AMM LP Token #", n));
-        let symbol = lp_symbol.unwrap_or_else(|| Self::counter_string(&env, b"ALP", n));
+        // Resolve LP token name/symbol defaults.
+        let name = Self::counter_string(&env, b"AMM LP Token #", n);
+        let symbol = Self::counter_string(&env, b"ALP", n);
 
         // Initialize LP token — admin must be the pool so it can mint/burn.
         LpTokenClient::new(&env, &lp_addr).initialize(&pool_addr, &name, &symbol, &7u32);
 
+        // Optionally deploy governance contract
+        let gov_addr = if let Some(gov_wasm) = governance_wasm_hash {
+            let gov_salt = Self::make_salt(&env, n * 3 + 2);
+            let gov_addr = env
+                .deployer()
+                .with_current_contract(gov_salt)
+                .deploy(gov_wasm);
+
+            // Initialize governance: 7 days voting, 2 days timelock, 10% quorum, 1% min stake.
+            GovernanceClient::new(&env, &gov_addr).initialize(
+                &admin,
+                &pool_addr,
+                &lp_addr,
+                &604800_u64,
+                &172800_u64,
+                &1000_i128,
+                &100_i128,
+            );
+
+            Some(gov_addr)
+        } else {
+            None
+        };
+
+        let pool_admin = gov_addr.clone().unwrap_or_else(|| admin.clone());
+
         // Initialize AMM pool.
         AmmPoolClient::new(&env, &pool_addr).initialize(
-            &admin, &ta, &tb, &lp_addr, &fee_bps, &admin,  // fee_recipient
+            &pool_admin, &ta, &tb, &lp_addr, &fee_bps, &admin,  // fee_recipient
             &0_i128, // protocol_fee_bps (disabled by default)
         );
 
@@ -176,6 +220,9 @@ impl Factory {
         env.storage()
             .instance()
             .set(&DataKey::LpToken(pool_addr.clone()), &lp_addr);
+        env.storage()
+            .instance()
+            .set(&DataKey::GovernanceFor(pool_addr.clone()), &gov_addr);
 
         let mut all: Vec<Address> = env
             .storage()
@@ -196,7 +243,7 @@ impl Factory {
             ),
         );
 
-        pool_addr
+        (pool_addr, gov_addr)
     }
 
     // ── Admin ─────────────────────────────────────────────────────────────────
@@ -246,6 +293,15 @@ impl Factory {
     pub fn get_lp_token(env: Env, pool: Address) -> Option<Address> {
         env.storage().instance().get(&DataKey::LpToken(pool))
     }
+
+    /// Return the governance address for the given pool, or `None` if unknown.
+    pub fn get_governance(env: Env, pool: Address) -> Option<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::GovernanceFor(pool))
+            .unwrap_or(None)
+    }
+
 
     /// Return the pool address for `(token_a, token_b)`, or `None` if it does
     /// not exist. Token pair order does not matter.
@@ -374,10 +430,38 @@ mod tests {
         let ta = Address::generate(&env);
         let tb = Address::generate(&env);
 
-        let pool = factory.create_pool(&ta, &tb, &30_i128, &None, &None);
+        let (pool, gov) = factory.create_pool(&ta, &tb, &30_i128, &None);
 
         assert_eq!(factory.get_pool(&ta, &tb), Some(pool.clone()));
         assert_eq!(factory.all_pools().len(), 1);
+        assert_eq!(gov, None);
+        assert_eq!(factory.get_governance(&pool), None);
+    }
+
+    #[test]
+    fn test_create_pool_with_governance() {
+        let env = Env::default();
+        env.budget().reset_unlimited();
+        env.mock_all_auths();
+
+        let amm_hash = env.deployer().upload_contract_wasm(amm::WASM);
+        let token_hash = env.deployer().upload_contract_wasm(token::WASM);
+        let gov_hash = env.deployer().upload_contract_wasm(governance::WASM);
+
+        let admin = Address::generate(&env);
+        let factory_addr = env.register_contract(None, Factory);
+        let factory = FactoryClient::new(&env, &factory_addr);
+        factory.initialize(&admin, &amm_hash, &token_hash);
+
+        let ta = Address::generate(&env);
+        let tb = Address::generate(&env);
+
+        let (pool, gov) = factory.create_pool(&ta, &tb, &30_i128, &Some(gov_hash));
+
+        assert_eq!(factory.get_pool(&ta, &tb), Some(pool.clone()));
+        assert_eq!(factory.all_pools().len(), 1);
+        assert!(gov.is_some());
+        assert_eq!(factory.get_governance(&pool), gov);
     }
 
     #[test]
@@ -397,7 +481,7 @@ mod tests {
         let ta = Address::generate(&env);
         let tb = Address::generate(&env);
 
-        factory.create_pool(&ta, &tb, &30_i128, &None, &None);
+        factory.create_pool(&ta, &tb, &30_i128, &None);
 
         // Reverse-order lookup returns the same pool.
         assert_eq!(factory.get_pool(&ta, &tb), factory.get_pool(&tb, &ta));
@@ -420,8 +504,8 @@ mod tests {
         let ta = Address::generate(&env);
         let tb = Address::generate(&env);
 
-        factory.create_pool(&ta, &tb, &30_i128, &None, &None);
-        let result = factory.try_create_pool(&ta, &tb, &30_i128, &None, &None);
+        factory.create_pool(&ta, &tb, &30_i128, &None);
+        let result = factory.try_create_pool(&ta, &tb, &30_i128, &None);
         assert!(result.is_err());
     }
 
@@ -445,10 +529,10 @@ mod tests {
         let tb = Address::generate(&env);
         let tc = Address::generate(&env);
 
-        factory.create_pool(&ta, &tb, &30_i128, &None, &None);
+        factory.create_pool(&ta, &tb, &30_i128, &None);
         assert_eq!(factory.all_pools().len(), 1);
 
-        factory.create_pool(&ta, &tc, &30_i128, &None, &None);
+        factory.create_pool(&ta, &tc, &30_i128, &None);
         assert_eq!(factory.all_pools().len(), 2);
     }
 
@@ -472,8 +556,8 @@ mod tests {
         let tb = Address::generate(&env);
         let tc = Address::generate(&env);
 
-        let pool0 = factory.create_pool(&ta, &tb, &30_i128, &None, &None);
-        let pool1 = factory.create_pool(&ta, &tc, &30_i128, &None, &None);
+        let (pool0, _) = factory.create_pool(&ta, &tb, &30_i128, &None);
+        let (pool1, _) = factory.create_pool(&ta, &tc, &30_i128, &None);
 
         // Fetch LP token addresses via the factory's registry.
         let lp0 = factory.get_lp_token(&pool0).unwrap();
@@ -486,42 +570,6 @@ mod tests {
         // Names and symbols must differ between the two pools.
         assert_ne!(lp_client0.name(), lp_client1.name());
         assert_ne!(lp_client0.symbol(), lp_client1.symbol());
-    }
-
-    #[test]
-    fn test_lp_token_custom_name_and_symbol() {
-        let env = Env::default();
-        env.budget().reset_unlimited();
-        env.mock_all_auths();
-
-        let amm_hash = env.deployer().upload_contract_wasm(amm::WASM);
-        let token_hash = env.deployer().upload_contract_wasm(token::WASM);
-
-        let admin = Address::generate(&env);
-        let factory_addr = env.register_contract(None, Factory);
-        let factory = FactoryClient::new(&env, &factory_addr);
-        factory.initialize(&admin, &amm_hash, &token_hash);
-
-        let ta = Address::generate(&env);
-        let tb = Address::generate(&env);
-
-        let custom_name = soroban_sdk::String::from_str(&env, "USDC/XLM LP");
-        let custom_symbol = soroban_sdk::String::from_str(&env, "USDC-XLM");
-
-        let pool = factory.create_pool(
-            &ta,
-            &tb,
-            &30_i128,
-            &Some(custom_name.clone()),
-            &Some(custom_symbol.clone()),
-        );
-
-        let lp_addr = factory.get_lp_token(&pool).unwrap();
-        use soroban_sdk::token::Client as TokenClient;
-        let lp = TokenClient::new(&env, &lp_addr);
-
-        assert_eq!(lp.name(), custom_name);
-        assert_eq!(lp.symbol(), custom_symbol);
     }
 
     // ── Issue #97: update_wasm_hashes ─────────────────────────────────────────
@@ -568,7 +616,7 @@ mod tests {
         // Pool creation still works after an update.
         let ta = Address::generate(&env);
         let tb = Address::generate(&env);
-        let pool = factory.create_pool(&ta, &tb, &30_i128, &None, &None);
+        let (pool, _) = factory.create_pool(&ta, &tb, &30_i128, &None);
         assert!(factory.get_pool(&ta, &tb).is_some());
         assert!(factory.get_lp_token(&pool).is_some());
 
@@ -601,13 +649,13 @@ mod tests {
         let tc = Address::generate(&env);
         let td = Address::generate(&env);
 
-        let pool1 = factory.create_pool(&ta, &tb, &30_i128, &None, &None);
+        let (pool1, _) = factory.create_pool(&ta, &tb, &30_i128, &None);
         assert_eq!(factory.get_pool_count(), 1);
 
-        let pool2 = factory.create_pool(&ta, &tc, &30_i128, &None, &None);
+        let (pool2, _) = factory.create_pool(&ta, &tc, &30_i128, &None);
         assert_eq!(factory.get_pool_count(), 2);
 
-        let pool3 = factory.create_pool(&ta, &td, &30_i128, &None, &None);
+        let (pool3, _) = factory.create_pool(&ta, &td, &30_i128, &None);
         assert_eq!(factory.get_pool_count(), 3);
 
         // Page 1: first two pools.

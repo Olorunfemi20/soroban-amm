@@ -1399,7 +1399,7 @@ impl AmmPool {
 
     /// Return the protocol fees accrued but not yet withdrawn, without moving funds.
     ///
-    /// Read-only counterpart to [`withdraw_protocol_fees`]; useful for fee recipients
+    /// Read-only counterpart to [`AmmPool::withdraw_protocol_fees`]; useful for fee recipients
     /// and dashboards that need a non-destructive view of pending fees.
     ///
     /// # Returns
