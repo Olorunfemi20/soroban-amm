@@ -162,7 +162,11 @@
                   "u32": 0
                 },
                 {
-                  "bool": true
+                  "vec": [
+                    {
+                      "symbol": "For"
+                    }
+                  ]
                 }
               ]
             }
@@ -893,6 +897,17 @@
                       },
                       "val": {
                         "u64": 1000000
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "votes_abstain"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {
@@ -2491,7 +2506,11 @@
                   "u32": 0
                 },
                 {
-                  "bool": true
+                  "vec": [
+                    {
+                      "symbol": "For"
+                    }
+                  ]
                 }
               ]
             }
@@ -2630,7 +2649,11 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                 },
                 {
-                  "bool": true
+                  "vec": [
+                    {
+                      "symbol": "For"
+                    }
+                  ]
                 },
                 {
                   "i128": {
@@ -2693,7 +2716,11 @@
                   "u32": 0
                 },
                 {
-                  "bool": false
+                  "vec": [
+                    {
+                      "symbol": "Against"
+                    }
+                  ]
                 }
               ]
             }
@@ -2726,7 +2753,11 @@
                   "u32": 0
                 },
                 {
-                  "bool": false
+                  "vec": [
+                    {
+                      "symbol": "Against"
+                    }
+                  ]
                 }
               ]
             }
@@ -2794,7 +2825,11 @@
                       "u32": 0
                     },
                     {
-                      "bool": false
+                      "vec": [
+                        {
+                          "symbol": "Against"
+                        }
+                      ]
                     }
                   ]
                 }

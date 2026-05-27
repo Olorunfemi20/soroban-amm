@@ -716,6 +716,17 @@
                     },
                     {
                       "key": {
+                        "symbol": "votes_abstain"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "votes_against"
                       },
                       "val": {
@@ -2388,6 +2399,17 @@
                 },
                 {
                   "key": {
+                    "symbol": "votes_abstain"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "votes_against"
                   },
                   "val": {
@@ -2442,7 +2464,11 @@
                   "u32": 0
                 },
                 {
-                  "bool": true
+                  "vec": [
+                    {
+                      "symbol": "For"
+                    }
+                  ]
                 }
               ]
             }
@@ -2475,7 +2501,11 @@
                   "u32": 0
                 },
                 {
-                  "bool": true
+                  "vec": [
+                    {
+                      "symbol": "For"
+                    }
+                  ]
                 }
               ]
             }
@@ -2543,7 +2573,11 @@
                       "u32": 0
                     },
                     {
-                      "bool": true
+                      "vec": [
+                        {
+                          "symbol": "For"
+                        }
+                      ]
                     }
                   ]
                 }

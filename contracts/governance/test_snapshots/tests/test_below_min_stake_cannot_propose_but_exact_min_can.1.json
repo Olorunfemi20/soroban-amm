@@ -821,6 +821,17 @@
                     },
                     {
                       "key": {
+                        "symbol": "votes_abstain"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "votes_against"
                       },
                       "val": {

@@ -25,6 +25,9 @@ pub struct TwapConsumer;
 
 #[contractimpl]
 impl TwapConsumer {
+    /// Keep snapshot alive for 7 days (in ledgers: 7 * 24 * 3600 / 5 ≈ 120,960)
+    pub const SNAPSHOT_TTL_LEDGERS: u32 = 120_960;
+
     /// Stores a pool cumulative-price snapshot keyed by the pool timestamp.
     pub fn save_snapshot(env: Env, pool: Address) {
         let (cum_a, cum_b, pool_ts) = AmmPoolOracleClient::new(&env, &pool).get_price_cumulative();
@@ -34,9 +37,17 @@ impl TwapConsumer {
             cum_b,
             pool_ts,
         };
+        let key = DataKey::Snapshot(pool, ledger_ts);
+        env.storage().persistent().set(&key, &snapshot);
         env.storage()
             .persistent()
-            .set(&DataKey::Snapshot(pool, ledger_ts), &snapshot);
+            .extend_ttl(&key, Self::SNAPSHOT_TTL_LEDGERS / 2, Self::SNAPSHOT_TTL_LEDGERS);
+    }
+
+    /// Deletes a price snapshot from persistent storage.
+    pub fn delete_snapshot(env: Env, pool: Address, ledger_ts: u64) {
+        let key = DataKey::Snapshot(pool, ledger_ts);
+        env.storage().persistent().remove(&key);
     }
 
     /// Computes TWAP for token A in terms of token B over `window_seconds`.
@@ -181,7 +192,7 @@ mod tests {
         env.ledger().set_timestamp(10_060);
         let whale = Address::generate(&env);
         ta_sac.mint(&whale, &1_000_000_i128);
-        amm.swap(&whale, &ta.address, &1_000_000_i128, &0_i128, &10_060_u64);
+        amm.swap(&whale, &ta.address, &1_000_000_i128, &0_i128, &10_060_u64, &None);
 
         let twap = consumer.get_twap_price(&amm_addr, &60_u64);
         let (spot_a, _spot_b) = amm.price_ratio();
@@ -239,6 +250,9 @@ mod tests {
 
         // Let 60s pass
         env.ledger().set_timestamp(10_060);
+        let whale = Address::generate(&env);
+        ta_sac.mint(&whale, &1_000_i128);
+        amm.swap(&whale, &ta.address, &1_000_i128, &0_i128, &10_060_u64, &None);
 
         let (twap_a_to_b, twap_b_to_a) = consumer.get_twap_both(&amm_addr, &60_u64);
 
@@ -295,11 +309,76 @@ mod tests {
 
         // Let 60s pass
         env.ledger().set_timestamp(10_060);
+        let whale = Address::generate(&env);
+        ta_sac.mint(&whale, &1_000_i128);
+        amm.swap(&whale, &ta.address, &1_000_i128, &0_i128, &10_060_u64, &None);
 
         let (twap_a_to_b, twap_b_to_a) = consumer.get_twap_both(&amm_addr, &60_u64);
 
         // With 1:2 reserves, twap_a_to_b should be 2M and twap_b_to_a should be 0.5M
         assert_eq!(twap_a_to_b, 2_000_000);
         assert_eq!(twap_b_to_a, 500_000);
+    }
+
+    #[test]
+    fn test_delete_snapshot() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().set_timestamp(10_000);
+
+        let admin = Address::generate(&env);
+        let amm_addr = env.register_contract(None, AmmPool);
+        let lp_addr = env.register_contract(None, LpToken);
+        let consumer_addr = env.register_contract(None, TwapConsumer);
+
+        token::LpTokenClient::new(&env, &lp_addr).initialize(
+            &amm_addr,
+            &soroban_sdk::String::from_str(&env, "AMM LP Token"),
+            &soroban_sdk::String::from_str(&env, "ALP"),
+            &7u32,
+        );
+
+        let (ta, ta_sac) = create_sac(&env, &admin);
+        let (tb, tb_sac) = create_sac(&env, &admin);
+
+        let amm = AmmPoolClient::new(&env, &amm_addr);
+        amm.initialize(
+            &admin,
+            &ta.address,
+            &tb.address,
+            &lp_addr,
+            &30_i128,
+            &admin,
+            &0_i128,
+        );
+
+        let provider = Address::generate(&env);
+        ta_sac.mint(&provider, &2_000_000_i128);
+        tb_sac.mint(&provider, &2_000_000_i128);
+        amm.add_liquidity(
+            &provider,
+            &2_000_000_i128,
+            &2_000_000_i128,
+            &0_i128,
+            &10_000_u64,
+        );
+
+        let consumer = TwapConsumerClient::new(&env, &consumer_addr);
+        consumer.save_snapshot(&amm_addr);
+
+        // Verify snapshot was saved and can be used (get_twap_price does not panic)
+        env.ledger().set_timestamp(10_060);
+        let whale = Address::generate(&env);
+        ta_sac.mint(&whale, &1_000_i128);
+        amm.swap(&whale, &ta.address, &1_000_i128, &0_i128, &10_060_u64, &None);
+        let price = consumer.get_twap_price(&amm_addr, &60_u64);
+        assert_eq!(price, 1_000_000);
+
+        // Delete the snapshot at timestamp 10_000
+        consumer.delete_snapshot(&amm_addr, &10_000);
+
+        // Verify that calling get_twap_price now panics (since target snapshot is missing)
+        let result = consumer.try_get_twap_price(&amm_addr, &60_u64);
+        assert!(result.is_err());
     }
 }

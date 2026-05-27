@@ -79,6 +79,15 @@ pub enum ProposalStatus {
     Cancelled,
 }
 
+/// Choice for a vote.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Vote {
+    For,
+    Against,
+    Abstain,
+}
+
 /// Records how an address voted on a specific proposal.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -86,6 +95,7 @@ pub enum VoteRecord {
     DidNotVote,
     VotedFor,
     VotedAgainst,
+    VotedAbstain,
 }
 
 /// Current governance configuration returned by `get_params`.
@@ -134,9 +144,11 @@ pub struct Proposal {
     pub expires_at: u64,
     pub votes_for: i128,
     pub votes_against: i128,
+    pub votes_abstain: i128,
     pub executed: bool,
     pub cancelled: bool,
 }
+
 
 // ── LP token client ───────────────────────────────────────────────────────────
 
@@ -307,6 +319,7 @@ impl Governance {
             expires_at,
             votes_for: 0,
             votes_against: 0,
+            votes_abstain: 0,
             executed: false,
             cancelled: false,
         };
@@ -330,7 +343,7 @@ impl Governance {
     ///
     /// Voting power = voter's current LP balance, which is then locked until
     /// the proposal concludes. Each address may only vote once per proposal.
-    pub fn vote(env: Env, voter: Address, proposal_id: u32, support: bool) {
+    pub fn vote(env: Env, voter: Address, proposal_id: u32, choice: Vote) {
         voter.require_auth();
 
         let proposal_key = DataKey::Proposal(proposal_id);
@@ -356,19 +369,25 @@ impl Governance {
         assert!(voting_power > 0, "no LP tokens: voting power is zero");
         lp_client.lock(&voter, &voting_power);
 
-        if support {
-            proposal.votes_for += voting_power;
-        } else {
-            proposal.votes_against += voting_power;
+        match choice {
+            Vote::For => {
+                proposal.votes_for += voting_power;
+            }
+            Vote::Against => {
+                proposal.votes_against += voting_power;
+            }
+            Vote::Abstain => {
+                proposal.votes_abstain += voting_power;
+            }
         }
 
         env.storage().persistent().set(&proposal_key, &proposal);
         Self::bump_key_ttl(&env, &proposal_key);
 
-        let record = if support {
-            VoteRecord::VotedFor
-        } else {
-            VoteRecord::VotedAgainst
+        let record = match choice {
+            Vote::For => VoteRecord::VotedFor,
+            Vote::Against => VoteRecord::VotedAgainst,
+            Vote::Abstain => VoteRecord::VotedAbstain,
         };
         env.storage().persistent().set(&voted_key, &record);
         Self::bump_key_ttl(&env, &voted_key);
@@ -379,7 +398,7 @@ impl Governance {
 
         env.events().publish(
             (Symbol::new(&env, "voted"),),
-            (proposal_id, voter, support, voting_power),
+            (proposal_id, voter, choice, voting_power),
         );
     }
 
@@ -405,7 +424,7 @@ impl Governance {
         assert!(now >= proposal.execute_after, "timelock not elapsed");
 
         let quorum_bps: i128 = env.storage().instance().get(&DataKey::QuorumBps).unwrap();
-        let total_votes = proposal.votes_for + proposal.votes_against;
+        let total_votes = proposal.votes_for + proposal.votes_against + proposal.votes_abstain;
         let quorum_threshold = proposal.snapshot_total_supply * quorum_bps / MAX_BPS;
         assert!(
             total_votes >= quorum_threshold,
@@ -634,7 +653,7 @@ impl Governance {
         }
 
         let quorum_bps: i128 = env.storage().instance().get(&DataKey::QuorumBps).unwrap();
-        let total_votes = proposal.votes_for + proposal.votes_against;
+        let total_votes = proposal.votes_for + proposal.votes_against + proposal.votes_abstain;
         let quorum_threshold = proposal.snapshot_total_supply * quorum_bps / MAX_BPS;
         let passed = total_votes >= quorum_threshold && proposal.votes_for > proposal.votes_against;
 
@@ -760,8 +779,8 @@ mod tests {
         assert_eq!(pid, 0);
 
         // Both vote for.
-        gov.vote(&lp1, &pid, &true);
-        gov.vote(&lp2, &pid, &true);
+        gov.vote(&lp1, &pid, &Vote::For);
+        gov.vote(&lp2, &pid, &Vote::For);
 
         // Advance past voting period + timelock.
         let proposal = gov.get_proposal(&pid);
@@ -787,7 +806,7 @@ mod tests {
 
         let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
         // Only lp1 votes (20 out of 1000 total = 2% < 10% quorum).
-        gov.vote(&lp1, &pid, &true);
+        gov.vote(&lp1, &pid, &Vote::For);
 
         let proposal = gov.get_proposal(&pid);
         s.env.ledger().set_timestamp(proposal.execute_after + 1);
@@ -809,8 +828,8 @@ mod tests {
         mint_lp(&s, &lp2, 400);
 
         let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
-        gov.vote(&lp1, &pid, &true);
-        gov.vote(&lp2, &pid, &true);
+        gov.vote(&lp1, &pid, &Vote::For);
+        gov.vote(&lp2, &pid, &Vote::For);
 
         // Jump past the expiry window.
         let proposal = gov.get_proposal(&pid);
@@ -831,9 +850,9 @@ mod tests {
         mint_lp(&s, &Address::generate(&s.env), 500);
 
         let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
-        gov.vote(&lp1, &pid, &true);
+        gov.vote(&lp1, &pid, &Vote::For);
 
-        let result = gov.try_vote(&lp1, &pid, &false);
+        let result = gov.try_vote(&lp1, &pid, &Vote::Against);
         assert!(result.is_err());
     }
 
@@ -850,7 +869,7 @@ mod tests {
         let proposal = gov.get_proposal(&pid);
         s.env.ledger().set_timestamp(proposal.vote_end + 1);
 
-        let result = gov.try_vote(&lp1, &pid, &true);
+        let result = gov.try_vote(&lp1, &pid, &Vote::For);
         assert!(result.is_err());
     }
 
@@ -865,8 +884,8 @@ mod tests {
         mint_lp(&s, &lp2, 400);
 
         let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
-        gov.vote(&lp1, &pid, &true);
-        gov.vote(&lp2, &pid, &true);
+        gov.vote(&lp1, &pid, &Vote::For);
+        gov.vote(&lp2, &pid, &Vote::For);
 
         // Jump past voting but NOT past timelock.
         let proposal = gov.get_proposal(&pid);
@@ -890,8 +909,8 @@ mod tests {
         let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
         assert_eq!(gov.proposal_status(&pid), ProposalStatus::Active);
 
-        gov.vote(&lp1, &pid, &true);
-        gov.vote(&lp2, &pid, &true);
+        gov.vote(&lp1, &pid, &Vote::For);
+        gov.vote(&lp2, &pid, &Vote::For);
 
         let proposal = gov.get_proposal(&pid);
         s.env.ledger().set_timestamp(proposal.execute_after);
@@ -953,14 +972,14 @@ mod tests {
         mint_lp(&s, &lp2, 400);
 
         let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
-        gov.vote(&lp1, &pid, &true);
+        gov.vote(&lp1, &pid, &Vote::For);
         assert_eq!(lp_client.locked_balance(&lp1), 600);
 
         // Simulated flash-loan pattern fails: voter cannot move locked weight.
         let transfer_result = lp_client.try_transfer(&lp1, &receiver, &600_i128);
         assert!(transfer_result.is_err());
 
-        gov.vote(&lp2, &pid, &true);
+        gov.vote(&lp2, &pid, &Vote::For);
         let proposal = gov.get_proposal(&pid);
         s.env.ledger().set_timestamp(proposal.execute_after + 1);
         gov.execute(&pid);
@@ -1007,18 +1026,18 @@ mod tests {
             )
         );
 
-        gov.vote(&lp1, &pid, &true);
+        gov.vote(&lp1, &pid, &Vote::For);
 
-        // `voted` event: (proposal_id, voter, support, voting_power)
+        // `voted` event: (proposal_id, voter, choice, voting_power)
         let events = s.env.events().all();
         let voted_evt = events
             .iter()
             .find(|e| e.0 == gov.address && e.1 == (Symbol::new(&s.env, "voted"),).into_val(&s.env))
             .expect("voted event not found");
-        let voted_data: (u32, Address, bool, i128) = voted_evt.2.into_val(&s.env);
-        assert_eq!(voted_data, (pid, lp1.clone(), true, 600_i128));
+        let voted_data: (u32, Address, Vote, i128) = voted_evt.2.into_val(&s.env);
+        assert_eq!(voted_data, (pid, lp1.clone(), Vote::For, 600_i128));
 
-        gov.vote(&lp2, &pid, &true);
+        gov.vote(&lp2, &pid, &Vote::For);
 
         s.env.ledger().set_timestamp(proposal.execute_after + 1);
         gov.execute(&pid);
@@ -1046,7 +1065,7 @@ mod tests {
 
         // --- 1. Test PausePool proposal ---
         let pid1 = gov.propose(&lp1, &ProposalKind::PausePool);
-        gov.vote(&lp1, &pid1, &true);
+        gov.vote(&lp1, &pid1, &Vote::For);
         let prop1 = gov.get_proposal(&pid1);
         s.env.ledger().set_timestamp(prop1.execute_after + 1);
         gov.execute(&pid1);
@@ -1055,7 +1074,7 @@ mod tests {
 
         // --- 2. Test UnpausePool proposal ---
         let pid2 = gov.propose(&lp1, &ProposalKind::UnpausePool);
-        gov.vote(&lp1, &pid2, &true);
+        gov.vote(&lp1, &pid2, &Vote::For);
         let prop2 = gov.get_proposal(&pid2);
         s.env.ledger().set_timestamp(prop2.execute_after + 1);
         gov.execute(&pid2);
@@ -1064,7 +1083,7 @@ mod tests {
 
         // --- 3. Test UpdateFlashLoanFee proposal ---
         let pid3 = gov.propose(&lp1, &ProposalKind::UpdateFlashLoanFee(45));
-        gov.vote(&lp1, &pid3, &true);
+        gov.vote(&lp1, &pid3, &Vote::For);
         let prop3 = gov.get_proposal(&pid3);
         s.env.ledger().set_timestamp(prop3.execute_after + 1);
         gov.execute(&pid3);
@@ -1081,7 +1100,7 @@ mod tests {
                 new_recipient: recipient.clone(),
             }),
         );
-        gov.vote(&lp1, &pid4, &true);
+        gov.vote(&lp1, &pid4, &Vote::For);
         let prop4 = gov.get_proposal(&pid4);
         s.env.ledger().set_timestamp(prop4.execute_after + 1);
         gov.execute(&pid4);
@@ -1089,6 +1108,87 @@ mod tests {
         assert_eq!(fee_rec, Some(recipient));
         assert_eq!(bps, 10);
         gov.unlock_vote(&lp1, &pid4);
+    }
+
+    #[test]
+    fn test_full_governance_lifecycle() {
+        let s = setup_suite(30); // initial fee = 30 bps
+        let gov = GovernanceClient::new(&s.env, &s.gov_addr);
+
+        // 1. Distribute LP tokens (quorum = 10% of 1000 = 100)
+        let lp1 = Address::generate(&s.env);
+        let lp2 = Address::generate(&s.env);
+        mint_lp(&s, &lp1, 600);
+        mint_lp(&s, &lp2, 400);
+
+        // 2. Propose fee change to 50 bps
+        let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
+        assert_eq!(gov.proposal_status(&pid), ProposalStatus::Active);
+
+        // 3. Vote (both for)
+        gov.vote(&lp1, &pid, &Vote::For);
+        gov.vote(&lp2, &pid, &Vote::For);
+
+        // 4. Advance past voting period
+        let p = gov.get_proposal(&pid);
+        s.env.ledger().set_timestamp(p.execute_after + 1);
+        assert_eq!(gov.proposal_status(&pid), ProposalStatus::Queued);
+
+        // 5. Execute
+        gov.execute(&pid);
+        assert_eq!(gov.proposal_status(&pid), ProposalStatus::Executed);
+
+        // 6. Verify AMM fee changed
+        let amm = amm::AmmPoolClient::new(&s.env, &s.amm_addr);
+        assert_eq!(amm.get_info().fee_bps, 50);
+    }
+
+    #[test]
+    fn test_governance_lifecycle_defeat_quorum() {
+        let s = setup_suite(30);
+        let gov = GovernanceClient::new(&s.env, &s.gov_addr);
+
+        let lp1 = Address::generate(&s.env);
+        let lp2 = Address::generate(&s.env);
+        mint_lp(&s, &lp1, 50);
+        mint_lp(&s, &lp2, 950);
+
+        let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
+        assert_eq!(gov.proposal_status(&pid), ProposalStatus::Active);
+
+        // Only lp1 votes. Total votes = 50 < 100 (quorum threshold)
+        gov.vote(&lp1, &pid, &Vote::For);
+
+        let p = gov.get_proposal(&pid);
+        s.env.ledger().set_timestamp(p.execute_after + 1);
+        assert_eq!(gov.proposal_status(&pid), ProposalStatus::Defeated);
+
+        let result = gov.try_execute(&pid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_governance_lifecycle_expired() {
+        let s = setup_suite(30);
+        let gov = GovernanceClient::new(&s.env, &s.gov_addr);
+
+        let lp1 = Address::generate(&s.env);
+        let lp2 = Address::generate(&s.env);
+        mint_lp(&s, &lp1, 600);
+        mint_lp(&s, &lp2, 400);
+
+        let pid = gov.propose(&lp1, &ProposalKind::UpdateFee(50));
+        assert_eq!(gov.proposal_status(&pid), ProposalStatus::Active);
+
+        gov.vote(&lp1, &pid, &Vote::For);
+        gov.vote(&lp2, &pid, &Vote::For);
+
+        let p = gov.get_proposal(&pid);
+        s.env.ledger().set_timestamp(p.expires_at + 1);
+        assert_eq!(gov.proposal_status(&pid), ProposalStatus::Expired);
+
+        let result = gov.try_execute(&pid);
+        assert!(result.is_err());
     }
 }
 
