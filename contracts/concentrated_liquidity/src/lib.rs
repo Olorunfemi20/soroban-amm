@@ -256,3 +256,60 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, Events as _};
+    use soroban_sdk::token::StellarAssetClient;
+    use soroban_sdk::{IntoVal, Val, Vec as SdkVec};
+
+    // #157: burn_position must emit ("burn_pos", provider) with
+    // (lower_tick, upper_tick, liquidity, amount_a, amount_b) — and the amounts
+    // must match what was actually returned to the provider.
+    #[test]
+    fn burn_position_emits_burn_pos_event_with_returned_amounts() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let token_a = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_b = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_a_addr = token_a.address();
+        let token_b_addr = token_b.address();
+
+        let contract_id = env.register_contract(None, ConcentratedLiquidity);
+        let client = ConcentratedLiquidityClient::new(&env, &contract_id);
+        // current_tick = 0; a range entirely above it is pure token-A, so mint
+        // and burn amounts are deterministic (liquidity == amount_a, and the
+        // burn returns exactly what was deposited).
+        client.initialize(&token_a_addr, &token_b_addr, &30_i128, &0_i32);
+
+        let provider = Address::generate(&env);
+        StellarAssetClient::new(&env, &token_a_addr).mint(&provider, &1_000_i128);
+
+        let lower_tick = 100_i32;
+        let upper_tick = 200_i32;
+        let (mint_a, mint_b) = client.mint_position(
+            &provider, &lower_tick, &upper_tick, &1_000_i128, &0_i128, &0_i128, &0_i128,
+        );
+        assert_eq!((mint_a, mint_b), (1_000_i128, 0_i128));
+
+        let liquidity = client.get_position(&provider, &lower_tick, &upper_tick).liquidity;
+        let (amount_a, amount_b) =
+            client.burn_position(&provider, &lower_tick, &upper_tick, &liquidity);
+        assert_eq!((amount_a, amount_b), (1_000_i128, 0_i128));
+
+        // mint_pos and burn_pos share the same data shape, so match on the topic.
+        let expected_topics: SdkVec<Val> =
+            (symbol_short!("burn_pos"), provider.clone()).into_val(&env);
+        let event = env
+            .events()
+            .all()
+            .iter()
+            .find(|e| e.0 == contract_id && e.1 == expected_topics)
+            .expect("burn_pos event not emitted");
+
+        let data: (i32, i32, i128, i128, i128) = event.2.into_val(&env);
+        assert_eq!(data, (lower_tick, upper_tick, liquidity, amount_a, amount_b));
+    }
+}
