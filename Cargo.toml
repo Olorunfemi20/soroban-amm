@@ -6,6 +6,10 @@ members = [
   "contracts/factory",
   "contracts/router",
   "contracts/token",
+  "contracts/factory",
+  "contracts/twap_consumer",
+  "contracts/governance",
+  "contracts/staking",
 ]
 
 [workspace.dependencies]

@@ -1,1 +1,9 @@
 /target
+node_modules
+dist
+__pycache__/
+*.pyc
+# Editor/tool backup files
+*.backup
+*.bak
+*.orig

@@ -1,0 +1,717 @@
+{
+  "contracts": {
+    "amm": {
+      "functions": [
+        {
+          "name": "initialize",
+          "inputs": [
+            { "name": "admin", "type": "Address" },
+            { "name": "token_a", "type": "Address" },
+            { "name": "token_b", "type": "Address" },
+            { "name": "lp_token", "type": "Address" },
+            { "name": "fee_bps", "type": "i128" },
+            { "name": "fee_recipient", "type": "Address" },
+            { "name": "protocol_fee_bps", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "initialize_with_flash_loan_fee",
+          "inputs": [
+            { "name": "admin", "type": "Address" },
+            { "name": "token_a", "type": "Address" },
+            { "name": "token_b", "type": "Address" },
+            { "name": "lp_token", "type": "Address" },
+            { "name": "fee_bps", "type": "i128" },
+            { "name": "fee_recipient", "type": "Address" },
+            { "name": "protocol_fee_bps", "type": "i128" },
+            { "name": "flash_loan_fee_bps", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "pause",
+          "inputs": [],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "unpause",
+          "inputs": [],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "is_paused",
+          "inputs": [],
+          "outputs": [{ "type": "bool" }],
+          "events": []
+        },
+        {
+          "name": "swap",
+          "inputs": [
+            { "name": "trader", "type": "Address" },
+            { "name": "token_in", "type": "Address" },
+            { "name": "amount_in", "type": "i128" },
+            { "name": "min_out", "type": "i128" },
+            { "name": "deadline", "type": "u64" }
+          ],
+          "outputs": [{ "type": "i128" }],
+          "events": ["swap"]
+        },
+        {
+          "name": "swap_exact_out",
+          "inputs": [
+            { "name": "trader", "type": "Address" },
+            { "name": "token_out", "type": "Address" },
+            { "name": "amount_out", "type": "i128" },
+            { "name": "max_in", "type": "i128" },
+            { "name": "deadline", "type": "u64" }
+          ],
+          "outputs": [{ "type": "i128" }],
+          "events": ["swap"]
+        },
+        {
+          "name": "add_liquidity",
+          "inputs": [
+            { "name": "provider", "type": "Address" },
+            { "name": "amount_a", "type": "i128" },
+            { "name": "amount_b", "type": "i128" },
+            { "name": "min_shares", "type": "i128" },
+            { "name": "deadline", "type": "u64" }
+          ],
+          "outputs": [{ "type": "i128" }],
+          "events": ["add_liquidity"]
+        },
+        {
+          "name": "remove_liquidity",
+          "inputs": [
+            { "name": "provider", "type": "Address" },
+            { "name": "shares", "type": "i128" },
+            { "name": "min_a", "type": "i128" },
+            { "name": "min_b", "type": "i128" },
+            { "name": "deadline", "type": "u64" }
+          ],
+          "outputs": [{ "type": "(i128, i128)" }],
+          "events": ["remove_liquidity"]
+        },
+        {
+          "name": "flash_loan",
+          "inputs": [
+            { "name": "receiver", "type": "Address" },
+            { "name": "token", "type": "Address" },
+            { "name": "amount", "type": "i128" },
+            { "name": "data", "type": "Bytes" }
+          ],
+          "outputs": [{ "type": "i128" }],
+          "events": ["flash_loan"]
+        },
+        {
+          "name": "get_info",
+          "inputs": [],
+          "outputs": [{ "type": "PoolInfo" }],
+          "events": []
+        },
+        {
+          "name": "get_accrued_fees",
+          "inputs": [],
+          "outputs": [{ "type": "(i128, i128)" }],
+          "events": []
+        },
+        {
+          "name": "get_protocol_fee",
+          "inputs": [],
+          "outputs": [{ "type": "(Option<Address>, i128)" }],
+          "events": []
+        },
+        {
+          "name": "set_protocol_fee",
+          "inputs": [
+            { "name": "admin", "type": "Address" },
+            { "name": "recipient", "type": "Address" },
+            { "name": "protocol_fee_bps", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "withdraw_protocol_fees",
+          "inputs": [],
+          "outputs": [{ "type": "(i128, i128)" }],
+          "events": ["withdraw_fees"]
+        },
+        {
+          "name": "shares_of",
+          "inputs": [{ "name": "provider", "type": "Address" }],
+          "outputs": [{ "type": "i128" }],
+          "events": []
+        },
+        {
+          "name": "price_ratio",
+          "inputs": [],
+          "outputs": [{ "type": "(i128, i128)" }],
+          "events": []
+        },
+        {
+          "name": "get_price_cumulative",
+          "inputs": [],
+          "outputs": [{ "type": "(i128, i128, u64)" }],
+          "events": []
+        },
+        {
+          "name": "simulate_swap",
+          "inputs": [
+            { "name": "token_in", "type": "Address" },
+            { "name": "amount_in", "type": "i128" }
+          ],
+          "outputs": [{ "type": "SwapSimulation" }],
+          "events": []
+        },
+        {
+          "name": "get_amount_out",
+          "inputs": [
+            { "name": "token_in", "type": "Address" },
+            { "name": "amount_in", "type": "i128" }
+          ],
+          "outputs": [{ "type": "i128" }],
+          "events": []
+        },
+        {
+          "name": "get_amount_in",
+          "inputs": [
+            { "name": "token_out", "type": "Address" },
+            { "name": "amount_out", "type": "i128" }
+          ],
+          "outputs": [{ "type": "i128" }],
+          "events": []
+        },
+        {
+          "name": "update_fee",
+          "inputs": [{ "name": "new_fee_bps", "type": "i128" }],
+          "outputs": [],
+          "events": ["fee_upd"]
+        },
+        {
+          "name": "update_flash_loan_fee",
+          "inputs": [{ "name": "new_fee_bps", "type": "i128" }],
+          "outputs": [],
+          "events": ["flash_fee_upd"]
+        },
+        {
+          "name": "propose_admin",
+          "inputs": [
+            { "name": "current_admin", "type": "Address" },
+            { "name": "new_admin", "type": "Address" }
+          ],
+          "outputs": [],
+          "events": ["admin_nominated"]
+        },
+        {
+          "name": "accept_admin",
+          "inputs": [{ "name": "new_admin", "type": "Address" }],
+          "outputs": [],
+          "events": ["admin_changed"]
+        },
+        {
+          "name": "upgrade",
+          "inputs": [{ "name": "new_wasm_hash", "type": "BytesN<32>" }],
+          "outputs": [],
+          "events": ["upgraded"]
+        }
+      ],
+      "types": {
+        "PoolInfo": [
+          { "name": "token_a", "type": "Address" },
+          { "name": "token_b", "type": "Address" },
+          { "name": "reserve_a", "type": "i128" },
+          { "name": "reserve_b", "type": "i128" },
+          { "name": "total_shares", "type": "i128" },
+          { "name": "fee_bps", "type": "i128" },
+          { "name": "flash_loan_fee_bps", "type": "i128" },
+          { "name": "admin", "type": "Address" },
+          { "name": "fee_recipient", "type": "Address" },
+          { "name": "protocol_fee_bps", "type": "i128" }
+        ],
+        "SwapSimulation": [
+          { "name": "amount_out", "type": "i128" },
+          { "name": "fee_amount", "type": "i128" },
+          { "name": "price_impact_bps", "type": "i128" },
+          { "name": "effective_price", "type": "i128" },
+          { "name": "spot_price", "type": "i128" }
+        ]
+      },
+      "events": [
+        {
+          "name": "swap",
+          "topics": [
+            { "name": "event", "type": "Symbol" },
+            { "name": "trader", "type": "Address" }
+          ],
+          "data": [
+            { "name": "token_in", "type": "Address" },
+            { "name": "amount_in", "type": "i128" },
+            { "name": "token_out", "type": "Address" },
+            { "name": "amount_out", "type": "i128" }
+          ]
+        },
+        {
+          "name": "add_liquidity",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [
+            { "name": "provider", "type": "Address" },
+            { "name": "amount_a", "type": "i128" },
+            { "name": "amount_b", "type": "i128" },
+            { "name": "shares", "type": "i128" }
+          ]
+        },
+        {
+          "name": "remove_liquidity",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [
+            { "name": "provider", "type": "Address" },
+            { "name": "shares", "type": "i128" },
+            { "name": "amount_a", "type": "i128" },
+            { "name": "amount_b", "type": "i128" }
+          ]
+        },
+        {
+          "name": "withdraw_fees",
+          "topics": [
+            { "name": "event", "type": "Symbol" },
+            { "name": "fee_recipient", "type": "Address" }
+          ],
+          "data": [
+            { "name": "fee_a", "type": "i128" },
+            { "name": "fee_b", "type": "i128" }
+          ]
+        },
+        {
+          "name": "fee_upd",
+          "topics": [
+            { "name": "event", "type": "Symbol" },
+            { "name": "admin", "type": "Address" }
+          ],
+          "data": [{ "name": "new_fee_bps", "type": "i128" }]
+        },
+        {
+          "name": "flash_fee_upd",
+          "topics": [
+            { "name": "event", "type": "Symbol" },
+            { "name": "admin", "type": "Address" }
+          ],
+          "data": [{ "name": "new_fee_bps", "type": "i128" }]
+        },
+        {
+          "name": "admin_nominated",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [
+            { "name": "current_admin", "type": "Address" },
+            { "name": "new_admin", "type": "Address" }
+          ]
+        },
+        {
+          "name": "admin_changed",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [{ "name": "new_admin", "type": "Address" }]
+        },
+        {
+          "name": "upgraded",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [{ "name": "new_wasm_hash", "type": "BytesN<32>" }]
+        }
+      ]
+    },
+    "token": {
+      "functions": [
+        {
+          "name": "initialize",
+          "inputs": [
+            { "name": "admin", "type": "Address" },
+            { "name": "name", "type": "String" },
+            { "name": "symbol", "type": "String" },
+            { "name": "decimals", "type": "u32" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "transfer",
+          "inputs": [
+            { "name": "from", "type": "Address" },
+            { "name": "to", "type": "Address" },
+            { "name": "amount", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": ["transfer"]
+        },
+        {
+          "name": "transfer_from",
+          "inputs": [
+            { "name": "spender", "type": "Address" },
+            { "name": "from", "type": "Address" },
+            { "name": "to", "type": "Address" },
+            { "name": "amount", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": ["transfer"]
+        },
+        {
+          "name": "approve",
+          "inputs": [
+            { "name": "from", "type": "Address" },
+            { "name": "spender", "type": "Address" },
+            { "name": "amount", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "mint",
+          "inputs": [
+            { "name": "to", "type": "Address" },
+            { "name": "amount", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": ["mint"]
+        },
+        {
+          "name": "burn",
+          "inputs": [
+            { "name": "from", "type": "Address" },
+            { "name": "amount", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": ["burn"]
+        },
+        {
+          "name": "lock",
+          "inputs": [
+            { "name": "holder", "type": "Address" },
+            { "name": "amount", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "unlock",
+          "inputs": [
+            { "name": "holder", "type": "Address" },
+            { "name": "amount", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "balance",
+          "inputs": [{ "name": "id", "type": "Address" }],
+          "outputs": [{ "type": "i128" }],
+          "events": []
+        },
+        {
+          "name": "allowance",
+          "inputs": [
+            { "name": "from", "type": "Address" },
+            { "name": "spender", "type": "Address" }
+          ],
+          "outputs": [{ "type": "i128" }],
+          "events": []
+        },
+        {
+          "name": "total_supply",
+          "inputs": [],
+          "outputs": [{ "type": "i128" }],
+          "events": []
+        }
+      ]
+    },
+    "factory": {
+      "functions": [
+        {
+          "name": "initialize",
+          "inputs": [
+            { "name": "admin", "type": "Address" },
+            { "name": "amm_wasm_hash", "type": "BytesN<32>" },
+            { "name": "token_wasm_hash", "type": "BytesN<32>" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "create_pool",
+          "inputs": [
+            { "name": "token_a", "type": "Address" },
+            { "name": "token_b", "type": "Address" },
+            { "name": "fee_bps", "type": "i128" },
+            { "name": "lp_name", "type": "Option<String>" },
+            { "name": "lp_symbol", "type": "Option<String>" }
+          ],
+          "outputs": [{ "type": "Address" }],
+          "events": ["pool_created"]
+        },
+        {
+          "name": "get_pool",
+          "inputs": [
+            { "name": "token_a", "type": "Address" },
+            { "name": "token_b", "type": "Address" }
+          ],
+          "outputs": [{ "type": "Option<Address>" }],
+          "events": []
+        },
+        {
+          "name": "get_lp_token",
+          "inputs": [{ "name": "pool", "type": "Address" }],
+          "outputs": [{ "type": "Option<Address>" }],
+          "events": []
+        },
+        {
+          "name": "all_pools",
+          "inputs": [],
+          "outputs": [{ "type": "Vec<Address>" }],
+          "events": []
+        },
+        {
+          "name": "get_pool_count",
+          "inputs": [],
+          "outputs": [{ "type": "u64" }],
+          "events": []
+        },
+        {
+          "name": "get_pools",
+          "inputs": [
+            { "name": "offset", "type": "u32" },
+            { "name": "limit", "type": "u32" }
+          ],
+          "outputs": [{ "type": "Vec<Address>" }],
+          "events": []
+        },
+        {
+          "name": "update_wasm_hashes",
+          "inputs": [
+            { "name": "amm_wasm_hash", "type": "Option<BytesN<32>>" },
+            { "name": "token_wasm_hash", "type": "Option<BytesN<32>>" }
+          ],
+          "outputs": [],
+          "events": ["wasm_updated"]
+        },
+        {
+          "name": "upgrade",
+          "inputs": [{ "name": "new_wasm_hash", "type": "BytesN<32>" }],
+          "outputs": [],
+          "events": ["upgraded"]
+        }
+      ],
+      "events": [
+        {
+          "name": "pool_created",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [
+            { "name": "token_a", "type": "Address" },
+            { "name": "token_b", "type": "Address" },
+            { "name": "pool_address", "type": "Address" },
+            { "name": "fee_bps", "type": "i128" },
+            { "name": "lp_token", "type": "Address" }
+          ]
+        },
+        {
+          "name": "wasm_updated",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [
+            { "name": "amm_wasm_hash", "type": "Option<BytesN<32>>" },
+            { "name": "token_wasm_hash", "type": "Option<BytesN<32>>" }
+          ]
+        },
+        {
+          "name": "upgraded",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [{ "name": "new_wasm_hash", "type": "BytesN<32>" }]
+        }
+      ]
+    },
+    "governance": {
+      "functions": [
+        {
+          "name": "initialize",
+          "inputs": [
+            { "name": "admin", "type": "Address" },
+            { "name": "amm_pool", "type": "Address" },
+            { "name": "lp_token", "type": "Address" },
+            { "name": "voting_period_secs", "type": "u64" },
+            { "name": "timelock_secs", "type": "u64" },
+            { "name": "quorum_bps", "type": "i128" },
+            { "name": "min_proposer_stake_bps", "type": "i128" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "set_min_proposer_stake_bps",
+          "inputs": [{ "name": "new_bps", "type": "i128" }],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "propose",
+          "inputs": [
+            { "name": "proposer", "type": "Address" },
+            { "name": "kind", "type": "ProposalKind" }
+          ],
+          "outputs": [{ "type": "u32" }],
+          "events": ["proposed"]
+        },
+        {
+          "name": "vote",
+          "inputs": [
+            { "name": "voter", "type": "Address" },
+            { "name": "proposal_id", "type": "u32" },
+            { "name": "support", "type": "bool" }
+          ],
+          "outputs": [],
+          "events": ["voted"]
+        },
+        {
+          "name": "execute",
+          "inputs": [{ "name": "proposal_id", "type": "u32" }],
+          "outputs": [],
+          "events": ["executed"]
+        },
+        {
+          "name": "cancel_proposal",
+          "inputs": [
+            { "name": "proposal_id", "type": "u32" },
+            { "name": "proposer", "type": "Address" }
+          ],
+          "outputs": [],
+          "events": ["cancelled"]
+        },
+        {
+          "name": "get_vote_info",
+          "inputs": [
+            { "name": "proposal_id", "type": "u32" },
+            { "name": "voter", "type": "Address" }
+          ],
+          "outputs": [{ "type": "VoteRecord" }],
+          "events": []
+        },
+        {
+          "name": "get_params",
+          "inputs": [],
+          "outputs": [{ "type": "GovernanceParams" }],
+          "events": []
+        },
+        {
+          "name": "unlock_vote",
+          "inputs": [
+            { "name": "voter", "type": "Address" },
+            { "name": "proposal_id", "type": "u32" }
+          ],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "get_proposal",
+          "inputs": [{ "name": "proposal_id", "type": "u32" }],
+          "outputs": [{ "type": "Proposal" }],
+          "events": []
+        },
+        {
+          "name": "proposal_status",
+          "inputs": [{ "name": "proposal_id", "type": "u32" }],
+          "outputs": [{ "type": "ProposalStatus" }],
+          "events": []
+        }
+      ],
+      "types": {
+        "UpdateProtocolFeeParams": [
+          { "name": "new_bps", "type": "i128" },
+          { "name": "new_recipient", "type": "Address" }
+        ],
+        "ProposalKind": [
+          { "name": "UpdateFee", "type": "i128" },
+          { "name": "UpdateProtocolFee", "type": "UpdateProtocolFeeParams" },
+          { "name": "UpdateFlashLoanFee", "type": "i128" },
+          { "name": "TransferAdmin", "type": "Address" },
+          { "name": "PausePool", "type": "null" },
+          { "name": "UnpausePool", "type": "null" }
+        ],
+        "Proposal": [
+          { "name": "id", "type": "u32" },
+          { "name": "proposer", "type": "Address" },
+          { "name": "kind", "type": "ProposalKind" },
+          { "name": "snapshot_total_supply", "type": "i128" },
+          { "name": "vote_start", "type": "u64" },
+          { "name": "vote_end", "type": "u64" },
+          { "name": "execute_after", "type": "u64" },
+          { "name": "expires_at", "type": "u64" },
+          { "name": "votes_for", "type": "i128" },
+          { "name": "votes_against", "type": "i128" },
+          { "name": "executed", "type": "bool" },
+          { "name": "cancelled", "type": "bool" }
+        ],
+        "ProposalStatus": ["Active", "Pending", "Queued", "Executed", "Defeated", "Expired", "Cancelled"],
+        "VoteRecord": ["DidNotVote", "VotedFor", "VotedAgainst"],
+        "GovernanceParams": [
+          { "name": "voting_period_secs", "type": "u64" },
+          { "name": "timelock_secs", "type": "u64" },
+          { "name": "quorum_bps", "type": "i128" },
+          { "name": "min_proposer_stake_bps", "type": "i128" }
+        ]
+      },
+      "events": [
+        {
+          "name": "proposed",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [
+            { "name": "proposal_id", "type": "u32" },
+            { "name": "proposer", "type": "Address" },
+            { "name": "kind", "type": "ProposalKind" },
+            { "name": "vote_end", "type": "u64" }
+          ]
+        },
+        {
+          "name": "voted",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [
+            { "name": "proposal_id", "type": "u32" },
+            { "name": "voter", "type": "Address" },
+            { "name": "support", "type": "bool" },
+            { "name": "voting_power", "type": "i128" }
+          ]
+        },
+        {
+          "name": "executed",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [
+            { "name": "proposal_id", "type": "u32" },
+            { "name": "kind", "type": "ProposalKind" }
+          ]
+        },
+        {
+          "name": "cancelled",
+          "topics": [{ "name": "event", "type": "Symbol" }],
+          "data": [{ "name": "proposal_id", "type": "u32" }]
+        }
+      ]
+    },
+    "twap_consumer": {
+      "functions": [
+        {
+          "name": "save_snapshot",
+          "inputs": [{ "name": "pool", "type": "Address" }],
+          "outputs": [],
+          "events": []
+        },
+        {
+          "name": "get_twap_price",
+          "inputs": [
+            { "name": "pool", "type": "Address" },
+            { "name": "window_seconds", "type": "u64" }
+          ],
+          "outputs": [{ "type": "i128" }],
+          "events": []
+        }
+      ]
+    }
+  }
+}
