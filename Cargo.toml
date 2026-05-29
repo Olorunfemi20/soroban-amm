@@ -10,6 +10,7 @@ members = [
   "contracts/twap_consumer",
   "contracts/governance",
   "contracts/staking",
+  "contracts/integration-tests",
 ]
 
 [workspace.dependencies]

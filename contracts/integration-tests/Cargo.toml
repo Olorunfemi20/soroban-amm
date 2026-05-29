@@ -1,0 +1,18 @@
+[package]
+name = "integration-tests"
+version = "0.1.0"
+edition = "2021"
+
+# This crate contains no library — it is purely a test harness.
+[lib]
+name = "integration_tests"
+path = "src/lib.rs"
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+amm              = { path = "../amm",              features = ["testutils"] }
+token            = { path = "../token",            features = ["testutils"] }
+factory          = { path = "../factory",          features = ["testutils"] }
+twap-consumer    = { path = "../twap_consumer",    features = ["testutils"] }
+governance       = { path = "../governance",       features = ["testutils"] }
+concentrated_liquidity = { path = "../concentrated_liquidity", features = ["testutils"] }

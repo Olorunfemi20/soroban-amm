@@ -1,6 +1,10 @@
 //! Concentrated Liquidity AMM (Uniswap v3-style tick-based ranges).
 //! Standalone contract — does NOT modify the existing AMM pool.
 #![no_std]
+
+pub mod math;
+pub mod tick_bitmap;
+
 use soroban_sdk::{
     contract, contractimpl, contracterror, contracttype, symbol_short, Address, Env, Vec,
 };
@@ -72,6 +76,19 @@ pub struct Position {
     pub tokens_owed: (i128, i128),
 }
 
+/// Per-tick state stored in the tick registry (issue #178).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TickInfo {
+    /// Total liquidity referencing this tick (never negative).
+    pub liquidity_gross: i128,
+    /// Net liquidity change when crossing this tick upward (subtracted when crossing downward).
+    pub liquidity_net: i128,
+    pub fee_growth_outside_a: i128,
+    pub fee_growth_outside_b: i128,
+    pub initialized: bool,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PoolState {
@@ -79,15 +96,6 @@ pub struct PoolState {
     pub current_tick: i32,
     pub active_liquidity: i128,
     pub tick_spacing: i32,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct TickInfo {
-    pub liquidity_net: i128,
-    pub liquidity_gross: i128,
-    pub fee_growth_outside_a: i128,
-    pub fee_growth_outside_b: i128,
 }
 
 #[contract]
