@@ -110,6 +110,32 @@ pub struct PoolState {
     pub tick_spacing: i32,
 }
 
+/// Detailed read-only swap estimate for concentrated-liquidity routing.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PriceImpactEstimate {
+    /// Gross input consumed by the simulated swap, including fees.
+    pub amount_in: i128,
+    /// Input that reaches pool math after LP fees.
+    pub amount_in_after_fee: i128,
+    /// Output amount predicted by the same tick walk used by `swap`.
+    pub amount_out: i128,
+    /// LP fee paid in the input token.
+    pub fee_amount: i128,
+    /// Spot token_out/token_in price before the swap, scaled by 1_000_000.
+    pub spot_price_before: i128,
+    /// Effective token_out/token_in price for this swap, scaled by 1_000_000.
+    pub effective_price: i128,
+    /// Price impact versus pre-swap spot, in basis points and including fees.
+    pub price_impact_bps: i128,
+    pub sqrt_price_before: u128,
+    pub sqrt_price_after: u128,
+    pub tick_before: i32,
+    pub tick_after: i32,
+    pub active_liquidity_before: i128,
+    pub active_liquidity_after: i128,
+}
+
 #[contract]
 pub struct ConcentratedLiquidity;
 
@@ -1237,6 +1263,82 @@ impl ConcentratedLiquidity {
         Ok(amount_out_total)
     }
 
+    /// Estimate swap output and price impact without transferring tokens or mutating pool state.
+    ///
+    /// This walks initialized ticks exactly like `swap`, so the returned output,
+    /// final tick, final sqrt price, and fee amount should match an immediately
+    /// executed swap with the same parameters.
+    pub fn estimate_price_impact(
+        env: Env,
+        zero_for_one: bool,
+        amount_in: i128,
+        sqrt_price_limit_x96: u128,
+    ) -> Result<PriceImpactEstimate, ClError> {
+        if amount_in <= 0 {
+            return Err(ClError::ZeroAmounts);
+        }
+
+        let fee_bps: i128 = env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0);
+        let tick_before = env
+            .storage()
+            .instance()
+            .get(&DataKey::CurrentTick)
+            .unwrap_or(0);
+        let active_liquidity_before = env
+            .storage()
+            .instance()
+            .get(&DataKey::ActiveLiquidity)
+            .unwrap_or(0);
+        let sqrt_price_before = Self::current_sqrt_price_x96(&env, tick_before);
+
+        let (
+            amount_in_actual,
+            amount_in_after_fee,
+            amount_out,
+            sqrt_price_after,
+            tick_after,
+            active_liquidity_after,
+        ) = Self::simulate_swap_walk(
+            &env,
+            zero_for_one,
+            amount_in,
+            sqrt_price_limit_x96,
+            fee_bps,
+            tick_before,
+            active_liquidity_before,
+            sqrt_price_before,
+        );
+
+        let fee_amount = amount_in_actual - amount_in_after_fee;
+        let spot_price_before = Self::spot_price_for_direction(tick_before, zero_for_one);
+        let effective_price = if amount_in_actual > 0 {
+            amount_out * PRICE_SCALE / amount_in_actual
+        } else {
+            0
+        };
+        let price_impact_bps = if spot_price_before > 0 && effective_price < spot_price_before {
+            (spot_price_before - effective_price) * 10_000 / spot_price_before
+        } else {
+            0
+        };
+
+        Ok(PriceImpactEstimate {
+            amount_in: amount_in_actual,
+            amount_in_after_fee,
+            amount_out,
+            fee_amount,
+            spot_price_before,
+            effective_price,
+            price_impact_bps,
+            sqrt_price_before,
+            sqrt_price_after,
+            tick_before,
+            tick_after,
+            active_liquidity_before,
+            active_liquidity_after,
+        })
+    }
+
     /// Returns raw (tick_cumulative, last_timestamp) for external consumers.
     pub fn get_tick_cumulative(env: Env) -> (i64, u64) {
         let cum: i64 = env.storage().instance().get(&DataKey::TickCumulative).unwrap_or(0);
@@ -1651,6 +1753,172 @@ impl ConcentratedLiquidity {
         }
     }
 
+    fn current_sqrt_price_x96(env: &Env, current_tick: i32) -> u128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::SqrtPriceX96)
+            .unwrap_or_else(|| {
+                let price = Self::tick_to_price(current_tick);
+                let sqrt_p = Self::sqrt(price);
+                (sqrt_p as u128) * (1u128 << 96) / 1000u128
+            })
+    }
+
+    fn spot_price_for_direction(current_tick: i32, zero_for_one: bool) -> i128 {
+        let price = Self::tick_to_price(current_tick).max(1);
+        if zero_for_one {
+            price
+        } else {
+            PRICE_SCALE * PRICE_SCALE / price
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn simulate_swap_walk(
+        env: &Env,
+        zero_for_one: bool,
+        amount_in: i128,
+        sqrt_price_limit_x96: u128,
+        fee_bps: i128,
+        mut current_tick: i32,
+        mut active_liquidity: i128,
+        mut sqrt_price_x96: u128,
+    ) -> (i128, i128, i128, u128, i32, i128) {
+        let mut amount_remaining = amount_in;
+        let mut amount_out_total = 0_i128;
+        let mut amount_in_after_fee_total = 0_i128;
+
+        while amount_remaining > 0 {
+            let next_tick_opt = Self::next_initialized_tick(env, current_tick, zero_for_one);
+
+            let next_tick = match next_tick_opt {
+                Some(t) => {
+                    if zero_for_one {
+                        t.max(MIN_TICK)
+                    } else {
+                        t.min(MAX_TICK)
+                    }
+                }
+                None => {
+                    if zero_for_one {
+                        MIN_TICK
+                    } else {
+                        MAX_TICK
+                    }
+                }
+            };
+
+            let next_price_x96 = {
+                let price = Self::tick_to_price(next_tick);
+                let sqrt_p = Self::sqrt(price);
+                (sqrt_p as u128) * (1u128 << 96) / 1000u128
+            };
+
+            let mut target_price_x96 = next_price_x96;
+            let mut hit_limit = false;
+
+            if zero_for_one {
+                if next_price_x96 <= sqrt_price_limit_x96 {
+                    target_price_x96 = sqrt_price_limit_x96;
+                    hit_limit = true;
+                }
+            } else if next_price_x96 >= sqrt_price_limit_x96 {
+                target_price_x96 = sqrt_price_limit_x96;
+                hit_limit = true;
+            }
+
+            let amount_in_after_fee = amount_remaining * (10000 - fee_bps) / 10000;
+
+            let (amount_in_step_after_fee, amount_out_step) = if active_liquidity == 0 {
+                (0, 0)
+            } else {
+                Self::compute_step(
+                    active_liquidity,
+                    sqrt_price_x96,
+                    target_price_x96,
+                    zero_for_one,
+                )
+            };
+
+            if (amount_in_after_fee >= amount_in_step_after_fee || active_liquidity == 0)
+                && !hit_limit
+            {
+                let actual_step_in = if active_liquidity > 0 && fee_bps > 0 {
+                    (amount_in_step_after_fee * 10000 + 10000 - fee_bps - 1) / (10000 - fee_bps)
+                } else {
+                    amount_in_step_after_fee
+                };
+                let actual_step_in = actual_step_in.min(amount_remaining);
+
+                amount_remaining -= actual_step_in;
+                amount_in_after_fee_total += amount_in_step_after_fee;
+                amount_out_total += amount_out_step;
+                sqrt_price_x96 = target_price_x96;
+
+                let tick_info = Self::get_tick(env, next_tick);
+                if zero_for_one {
+                    active_liquidity -= tick_info.liquidity_net;
+                    current_tick = next_tick - 1;
+                } else {
+                    active_liquidity += tick_info.liquidity_net;
+                    current_tick = next_tick;
+                }
+            } else {
+                if active_liquidity > 0 {
+                    let amt_in_after_fee = if hit_limit {
+                        amount_in_step_after_fee
+                    } else {
+                        amount_in_after_fee
+                    };
+
+                    let (new_price_x96, amount_out_step) = Self::compute_final_price_and_output(
+                        active_liquidity,
+                        sqrt_price_x96,
+                        amt_in_after_fee,
+                        zero_for_one,
+                    );
+
+                    let actual_in = if hit_limit {
+                        if fee_bps > 0 {
+                            (amt_in_after_fee * 10000 + 10000 - fee_bps - 1)
+                                / (10000 - fee_bps)
+                        } else {
+                            amt_in_after_fee
+                        }
+                    } else {
+                        amount_remaining
+                    };
+                    let actual_in = actual_in.min(amount_remaining);
+
+                    amount_remaining -= actual_in;
+                    amount_in_after_fee_total += amt_in_after_fee;
+                    amount_out_total += amount_out_step;
+
+                    if hit_limit {
+                        sqrt_price_x96 = target_price_x96;
+                    } else {
+                        sqrt_price_x96 = new_price_x96;
+                    }
+                    current_tick = Self::price_to_tick(sqrt_price_x96);
+                } else {
+                    sqrt_price_x96 = target_price_x96;
+                    current_tick = Self::price_to_tick(sqrt_price_x96);
+                    amount_remaining = 0;
+                }
+                break;
+            }
+        }
+
+        (
+            amount_in - amount_remaining,
+            amount_in_after_fee_total,
+            amount_out_total,
+            sqrt_price_x96,
+            current_tick,
+            active_liquidity,
+        )
+    }
+
     fn compute_step(
         liquidity: i128,
         sqrt_price_current_x96: u128,
@@ -1862,6 +2130,60 @@ mod tests {
         let state_after = te.client.get_pool_state();
         assert!(state_after.current_tick < 0);
         assert!(state_after.active_liquidity > 0);
+    }
+
+    #[test]
+    fn test_price_impact_estimate_matches_single_range_swap() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 30, 0);
+
+        te.client
+            .mint_position(&te.provider, &-100, &100, &100_000, &100_000, &0, &0);
+
+        let quote = te.client.estimate_price_impact(&true, &1_000_i128, &0_u128);
+        let out = te
+            .client
+            .swap(&te.provider, &true, &1_000_i128, &0_u128, &0_i128, &10_000_u64);
+        let state = te.client.get_pool_state();
+
+        assert_eq!(quote.amount_out, out);
+        assert_eq!(quote.sqrt_price_after, state.sqrt_price);
+        assert_eq!(quote.tick_after, state.current_tick);
+        assert_eq!(quote.active_liquidity_after, state.active_liquidity);
+        assert_eq!(quote.amount_in, 1_000_i128);
+        assert_eq!(quote.fee_amount, 3_i128);
+        assert!(quote.effective_price > 0);
+        assert!(quote.price_impact_bps > 0);
+    }
+
+    #[test]
+    fn test_price_impact_estimate_matches_many_tick_crossing_swap() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 25, 25);
+
+        te.client
+            .mint_position(&te.provider, &-100, &-50, &0, &80_000, &0, &0);
+        te.client
+            .mint_position(&te.provider, &-50, &0, &0, &90_000, &0, &0);
+        te.client
+            .mint_position(&te.provider, &0, &50, &100_000, &100_000, &0, &0);
+        te.client
+            .mint_position(&te.provider, &50, &100, &70_000, &0, &0, &0);
+
+        let quote = te
+            .client
+            .estimate_price_impact(&true, &25_000_i128, &0_u128);
+        let out = te
+            .client
+            .swap(&te.provider, &true, &25_000_i128, &0_u128, &0_i128, &10_000_u64);
+        let state = te.client.get_pool_state();
+
+        assert_eq!(quote.amount_out, out);
+        assert_eq!(quote.sqrt_price_after, state.sqrt_price);
+        assert_eq!(quote.tick_after, state.current_tick);
+        assert_eq!(quote.active_liquidity_after, state.active_liquidity);
+        assert!(quote.tick_after < quote.tick_before);
+        assert!(quote.price_impact_bps > 0);
     }
 
     #[test]

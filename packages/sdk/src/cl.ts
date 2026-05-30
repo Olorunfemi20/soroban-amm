@@ -60,6 +60,23 @@ export interface PositionQuote {
   liquidity: bigint;
 }
 
+/** Detailed quote returned by `estimate_price_impact`. */
+export interface PriceImpactEstimate {
+  amountIn: bigint;
+  amountInAfterFee: bigint;
+  amountOut: bigint;
+  feeAmount: bigint;
+  spotPriceBefore: bigint;
+  effectivePrice: bigint;
+  priceImpactBps: bigint;
+  sqrtPriceBefore: bigint;
+  sqrtPriceAfter: bigint;
+  tickBefore: number;
+  tickAfter: number;
+  activeLiquidityBefore: bigint;
+  activeLiquidityAfter: bigint;
+}
+
 // ── ConcentratedLiquidityClient ───────────────────────────────────────────────
 
 export class ConcentratedLiquidityClient {
@@ -172,6 +189,41 @@ export class ConcentratedLiquidityClient {
       amountA: BigInt(String(native[0] ?? 0)),
       amountB: BigInt(String(native[1] ?? 0)),
       liquidity: BigInt(String(native[2] ?? 0)),
+    };
+  }
+
+  /**
+   * Estimates swap output and price impact for a concentrated-liquidity swap.
+   *
+   * The contract walks initialized ticks with the same math used by `swap`, so
+   * this is suitable for frontends, slippage previews, and route comparison.
+   */
+  async estimatePriceImpact(
+    zeroForOne: boolean,
+    amountIn: bigint,
+    sqrtPriceLimit: bigint
+  ): Promise<PriceImpactEstimate> {
+    const raw = await this.simulate(
+      "estimate_price_impact",
+      nativeToScVal(zeroForOne),
+      i128(amountIn),
+      nativeToScVal(sqrtPriceLimit, { type: "u128" })
+    );
+    const native = scValToNative(raw) as Record<string, unknown>;
+    return {
+      amountIn: BigInt(String(native.amount_in ?? 0)),
+      amountInAfterFee: BigInt(String(native.amount_in_after_fee ?? 0)),
+      amountOut: BigInt(String(native.amount_out ?? 0)),
+      feeAmount: BigInt(String(native.fee_amount ?? 0)),
+      spotPriceBefore: BigInt(String(native.spot_price_before ?? 0)),
+      effectivePrice: BigInt(String(native.effective_price ?? 0)),
+      priceImpactBps: BigInt(String(native.price_impact_bps ?? 0)),
+      sqrtPriceBefore: BigInt(String(native.sqrt_price_before ?? 0)),
+      sqrtPriceAfter: BigInt(String(native.sqrt_price_after ?? 0)),
+      tickBefore: Number(native.tick_before ?? 0),
+      tickAfter: Number(native.tick_after ?? 0),
+      activeLiquidityBefore: BigInt(String(native.active_liquidity_before ?? 0)),
+      activeLiquidityAfter: BigInt(String(native.active_liquidity_after ?? 0)),
     };
   }
 

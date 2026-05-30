@@ -22,5 +22,5 @@ export type { CreatePoolResult } from "./factory.js";
 export { GovernanceClient } from "./governance.js";
 export type { GovernanceParams, Proposal, ProposalStatus, VoteChoice, VoteRecord } from "./governance.js";
 export { ConcentratedLiquidityClient } from "./cl.js";
-export type { Position, ClPoolState, PositionQuote } from "./cl.js";
+export type { Position, ClPoolState, PositionQuote, PriceImpactEstimate } from "./cl.js";
 export * from "./types.js";
