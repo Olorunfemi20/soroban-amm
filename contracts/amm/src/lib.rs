@@ -74,7 +74,9 @@ pub enum DataKey {
     PriceCumulativeB,
     LastTimestamp,
     Shares(Address),
-
+    // Emergency withdrawal storage
+    EmergencyWithdrawTimestamp,
+    EmergencyWithdrawRecipient,
 }
 
 // ── Pool info returned by `get_info` ─────────────────────────────────────────
@@ -252,6 +254,43 @@ impl AmmPool {
             .instance()
             .get(&DataKey::Paused)
             .unwrap_or(false)
+    }
+
+    /// Emergency withdraw of all pool reserves to a designated address.
+    /// Admin-only, callable via a timed governance proposal.
+    pub fn emergency_withdraw(env: Env, to: Address) -> Result<(), AmmError> {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Record audit information
+        let ts: u64 = env.ledger().timestamp();
+        env.storage().instance().set(&DataKey::EmergencyWithdrawTimestamp, &ts);
+        env.storage().instance().set(&DataKey::EmergencyWithdrawRecipient, &to);
+
+        // Get token addresses and reserves
+        let token_a: Address = env.storage().instance().get(&DataKey::TokenA).unwrap();
+        let token_b: Address = env.storage().instance().get(&DataKey::TokenB).unwrap();
+        let reserve_a = Self::get_reserve_a(env.clone());
+        let reserve_b = Self::get_reserve_b(env.clone());
+
+        // Transfer reserves to recipient
+        if reserve_a > 0 {
+            SepTokenClient::new(&env, &token_a).transfer(&env.current_contract_address(), &to, &reserve_a);
+        }
+        if reserve_b > 0 {
+            SepTokenClient::new(&env, &token_b).transfer(&env.current_contract_address(), &to, &reserve_b);
+        }
+
+        // Zero out reserves
+        env.storage().instance().set(&DataKey::ReserveA, &0_i128);
+        env.storage().instance().set(&DataKey::ReserveB, &0_i128);
+
+        // Emit event for audit trail
+        env.events().publish(
+            (Symbol::new(&env, "emergency_withdraw"), admin.clone()),
+            (to, reserve_a, reserve_b),
+        );
+        Ok(())
     }
 
     /// Update the protocol fee configuration. Admin-only.
@@ -3140,7 +3179,75 @@ mod prop_tests {
 
         assert_eq!(amm.get_fee_info(), 30_i128);
         assert_eq!(amm.get_fee_info(), amm.get_info().fee_bps);
-    }
+     }
+
+     #[test]
+     fn test_emergency_withdraw() {
+         let (env, admin, amm_addr, lp_addr, _) = setup();
+         let (ta_client, ta_sac) = create_sac(&env, &admin);
+         let (tb_client, tb_sac) = create_sac(&env, &admin);
+         let amm = AmmPoolClient::new(&env, &amm_addr);
+
+         amm.initialize(
+             &admin,
+             &ta_client.address,
+             &tb_client.address,
+             &lp_addr,
+             &30_i128,
+             &admin,
+             &0_i128,
+         );
+
+         let provider = Address::generate(&env);
+         ta_sac.mint(&provider, &2_000_000_i128);
+         tb_sac.mint(&provider, &1_000_000_i128);
+
+         amm.add_liquidity(
+             &provider,
+             &2_000_000_i128,
+             &1_000_000_i128,
+             &0_i128,
+             &u64::MAX,
+         );
+
+         let info_before = amm.get_info();
+         assert_eq!(info_before.reserve_a, 2_000_000);
+         assert_eq!(info_before.reserve_b, 1_000_000);
+
+         let recipient = Address::generate(&env);
+         let expected_ts = 99999_u64;
+         env.ledger().set_timestamp(expected_ts);
+
+         // Call emergency_withdraw
+         amm.emergency_withdraw(&recipient);
+
+         // Verify reserves are now zeroed
+         let info_after = amm.get_info();
+         assert_eq!(info_after.reserve_a, 0);
+         assert_eq!(info_after.reserve_b, 0);
+
+         // Verify recipient received the tokens
+         assert_eq!(ta_client.balance(&recipient), 2_000_000);
+         assert_eq!(tb_client.balance(&recipient), 1_000_000);
+
+         // Verify audit log values in contract storage using env.as_contract_at
+         env.as_contract_at(&amm_addr, || {
+             let ts: u64 = env.storage().instance().get(&DataKey::EmergencyWithdrawTimestamp).unwrap();
+             let rec: Address = env.storage().instance().get(&DataKey::EmergencyWithdrawRecipient).unwrap();
+             assert_eq!(ts, expected_ts);
+             assert_eq!(rec, recipient);
+         });
+     }
+
+     #[test]
+     #[should_panic]
+     fn test_emergency_withdraw_requires_admin_auth() {
+         let env = Env::default();
+         let amm_addr = env.register_contract(None, AmmPool);
+         let amm = AmmPoolClient::new(&env, &amm_addr);
+         let recipient = Address::generate(&env);
+         amm.emergency_withdraw(&recipient);
+     }
 
     #[test]
     #[should_panic]

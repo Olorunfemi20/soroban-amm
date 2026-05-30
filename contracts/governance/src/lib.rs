@@ -191,6 +191,7 @@ pub enum ProposalKind {
     TransferAdmin(Address),
     PausePool,
     UnpausePool,
+    EmergencyWithdraw(Address),
 }
 
 #[contracttype]
@@ -242,6 +243,7 @@ pub trait AmmPoolInterface {
     fn set_protocol_fee(env: Env, admin: Address, recipient: Address, protocol_fee_bps: i128);
     fn pause(env: Env);
     fn unpause(env: Env);
+    fn emergency_withdraw(env: Env, to: Address);
     fn propose_admin(env: Env, current_admin: Address, new_admin: Address);
 }
 
@@ -587,6 +589,9 @@ impl Governance {
             }
             ProposalKind::UnpausePool => {
                 amm_client.unpause();
+            },
+            ProposalKind::EmergencyWithdraw(to) => {
+                amm_client.emergency_withdraw(to);
             }
         }
 
@@ -757,6 +762,7 @@ impl Governance {
             .get(&DataKey::Delegate(from))
             .unwrap_or(None)
     }
+
 
     /// Admin-only: set the protocol multisig that may veto passed proposals.
     pub fn set_veto_multisig(env: Env, multisig: Address) -> Result<(), GovernanceError> {
@@ -1495,6 +1501,35 @@ mod tests {
         assert_eq!(fee_rec, Some(recipient));
         assert_eq!(bps, 10);
         gov.unlock_vote(&lp1, &pid4);
+
+        // --- 5. Test EmergencyWithdraw proposal ---
+        let emergency_rec = Address::generate(&s.env);
+        let pid5 = gov.propose(&lp1, &ProposalKind::EmergencyWithdraw(emergency_rec.clone()));
+        gov.vote(&lp1, &pid5, &Vote::For);
+        let prop5 = gov.get_proposal(&pid5);
+        s.env.ledger().set_timestamp(prop5.execute_after + 1);
+
+        let ta_sac = StellarAssetClient::new(&s.env, &info.token_a);
+        let tb_sac = StellarAssetClient::new(&s.env, &info.token_b);
+        let provider = Address::generate(&s.env);
+        ta_sac.mint(&provider, &100_000_i128);
+        tb_sac.mint(&provider, &100_000_i128);
+
+        amm.add_liquidity(&provider, &100_000_i128, &100_000_i128, &0_i128, &u64::MAX);
+        assert_eq!(amm.get_info().reserve_a, 100_000);
+        assert_eq!(amm.get_info().reserve_b, 100_000);
+
+        gov.execute(&pid5);
+
+        assert_eq!(amm.get_info().reserve_a, 0);
+        assert_eq!(amm.get_info().reserve_b, 0);
+
+        let ta_client = StellarTokenClient::new(&s.env, &info.token_a);
+        let tb_client = StellarTokenClient::new(&s.env, &info.token_b);
+        assert_eq!(ta_client.balance(&emergency_rec), 100_000);
+        assert_eq!(tb_client.balance(&emergency_rec), 100_000);
+
+        gov.unlock_vote(&lp1, &pid5);
     }
 
     #[test]
