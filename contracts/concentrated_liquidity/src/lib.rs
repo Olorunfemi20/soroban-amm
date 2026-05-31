@@ -790,6 +790,10 @@ impl ConcentratedLiquidity {
                 &total_b,
             );
         }
+        env.events().publish(
+            (symbol_short!("coll_fees"), provider),
+            (lower_tick, upper_tick, total_a, total_b),
+        );
         Ok((total_a, total_b))
     }
 
@@ -1691,6 +1695,7 @@ impl ConcentratedLiquidity {
         info.liquidity_gross += liquidity_delta;
 
         if prev_gross == 0 {
+            info.initialized = true;
             if tick <= current_tick {
                 info.fee_growth_outside_a = fg_a;
                 info.fee_growth_outside_b = fg_b;
@@ -2014,6 +2019,7 @@ mod tests {
         provider: Address,
         token_a: Address,
         token_b: Address,
+        cl_addr: Address,
         client: ConcentratedLiquidityClient<'a>,
         sac_a: StellarAssetClient<'a>,
         sac_b: StellarAssetClient<'a>,
@@ -2052,6 +2058,7 @@ mod tests {
             provider,
             token_a,
             token_b,
+            cl_addr: cl_addr.clone(),
             client,
             sac_a,
             sac_b,
@@ -2322,6 +2329,208 @@ mod tests {
 
         // Should now succeed
         te.client.mint_position(&te.provider, &-100, &100, &10_000, &10_000, &0, &0);
+    }
+
+    #[test]
+    fn collect_fees_emits_coll_fees_event() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+        let cl_addr = te.cl_addr.clone();
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+
+        let (total_a, total_b) = te.client.collect_fees(&te.provider, &0, &150);
+
+        use soroban_sdk::{IntoVal, Val, Vec as SdkVec, testutils::Events as _};
+        let expected_topics: SdkVec<Val> =
+            (symbol_short!("coll_fees"), te.provider.clone()).into_val(&env);
+        let event = env
+            .events()
+            .all()
+            .iter()
+            .find(|e| e.0 == cl_addr && e.1 == expected_topics)
+            .expect("coll_fees event must be emitted");
+        let data: (i32, i32, i128, i128) = event.2.into_val(&env);
+        assert_eq!(data, (0_i32, 150_i32, total_a, total_b));
+    }
+
+    #[test]
+    fn second_collect_fees_returns_zero_without_new_swap() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+
+        let (first_a, first_b) = te.client.collect_fees(&te.provider, &0, &150);
+        assert!(first_a > 0 || first_b > 0);
+
+        let (second_a, second_b) = te.client.collect_fees(&te.provider, &0, &150);
+        assert_eq!((second_a, second_b), (0, 0));
+    }
+
+    #[test]
+    fn collect_fees_does_not_reduce_liquidity() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        let liq_before = te.client.get_position(&te.provider, &0, &150).liquidity;
+
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+        te.client.collect_fees(&te.provider, &0, &150);
+
+        let liq_after = te.client.get_position(&te.provider, &0, &150).liquidity;
+        assert_eq!(liq_before, liq_after);
+    }
+
+    #[test]
+    fn out_of_range_position_earns_no_fees() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        let out_of_range = Address::generate(&env);
+        te.sac_a.mint(&out_of_range, &1_000_000);
+        te.sac_b.mint(&out_of_range, &1_000_000);
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        te.client
+            .mint_position(&out_of_range, &300, &400, &100_000, &0, &0, &0);
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+
+        let (in_a, in_b) = te.client.collect_fees(&te.provider, &0, &150);
+        let (out_a, out_b) = te.client.collect_fees(&out_of_range, &300, &400);
+        assert!(in_a > 0 || in_b > 0);
+        assert_eq!((out_a, out_b), (0, 0));
+    }
+
+    #[test]
+    fn collect_fees_after_full_burn_returns_accrued_fees() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        let liq = te.client.get_position(&te.provider, &0, &150).liquidity;
+
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+        te.client.burn_position(&te.provider, &0, &150, &liq);
+
+        assert_eq!(te.client.get_position(&te.provider, &0, &150).liquidity, 0);
+
+        let (fee_a, fee_b) = te.client.collect_fees(&te.provider, &0, &150);
+        assert!(fee_a > 0 || fee_b > 0);
+
+        let (second_a, second_b) = te.client.collect_fees(&te.provider, &0, &150);
+        assert_eq!((second_a, second_b), (0, 0));
+    }
+
+    #[test]
+    fn fees_split_proportionally_between_equal_positions() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        let p2 = Address::generate(&env);
+        te.sac_a.mint(&p2, &1_000_000);
+        te.sac_b.mint(&p2, &1_000_000);
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        te.client
+            .mint_position(&p2, &0, &150, &100_000, &100_000, &0, &0);
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+
+        let (f1_a, f1_b) = te.client.collect_fees(&te.provider, &0, &150);
+        let (f2_a, f2_b) = te.client.collect_fees(&p2, &0, &150);
+
+        assert!(f1_a > 0 || f1_b > 0);
+        assert!(f2_a > 0 || f2_b > 0);
+        assert!((f1_a - f2_a).abs() <= 1);
+        assert!((f1_b - f2_b).abs() <= 1);
+    }
+
+    #[test]
+    fn collect_fees_after_second_swap_returns_only_new_fees() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+        let (first_a, first_b) = te.client.collect_fees(&te.provider, &0, &150);
+
+        te.client
+            .swap(&te.provider, &false, &2_000, &u128::MAX, &0, &u64::MAX);
+        let (second_a, second_b) = te.client.collect_fees(&te.provider, &0, &150);
+
+        assert!(first_a + second_a > first_a || first_b + second_b > first_b);
+
+        let (third_a, third_b) = te.client.collect_fees(&te.provider, &0, &150);
+        assert_eq!((third_a, third_b), (0, 0));
+    }
+
+    #[test]
+    fn tokens_owed_resets_after_collect() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+        te.client.collect_fees(&te.provider, &0, &150);
+
+        let pos = te.client.get_position(&te.provider, &0, &150);
+        assert_eq!(pos.tokens_owed, (0, 0));
+    }
+
+    #[test]
+    fn burn_after_collect_returns_principal_not_fees() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        te.client
+            .mint_position(&te.provider, &200, &300, &50_000, &0, &0, &0);
+        let liq = te.client.get_position(&te.provider, &200, &300).liquidity;
+
+        let (fee_a, fee_b) = te.client.collect_fees(&te.provider, &200, &300);
+        assert_eq!((fee_a, fee_b), (0, 0));
+
+        let (burn_a, burn_b) = te.client.burn_position(&te.provider, &200, &300, &liq);
+        assert!(burn_a > 0);
+        assert_eq!(burn_b, 0);
+    }
+
+    #[test]
+    fn fees_accrued_before_partial_burn_are_collectable() {
+        let env = Env::default();
+        let te = setup_test_env(&env, 1000, 100);
+
+        te.client
+            .mint_position(&te.provider, &0, &150, &100_000, &100_000, &0, &0);
+        let liq = te.client.get_position(&te.provider, &0, &150).liquidity;
+
+        te.client
+            .swap(&te.provider, &true, &2_000, &0, &0, &u64::MAX);
+        te.client.burn_position(&te.provider, &0, &150, &(liq / 2));
+
+        let (fee_a, fee_b) = te.client.collect_fees(&te.provider, &0, &150);
+        assert!(fee_a > 0 || fee_b > 0);
+
+        let pos = te.client.get_position(&te.provider, &0, &150);
+        assert_eq!(pos.liquidity, liq - liq / 2);
     }
 }
 
@@ -2749,8 +2958,8 @@ mod test_new_tick_features {
         let (provider, _ta, _tb, client) = setup_pool(&env);
         client.mint_position(&provider, &-100_i32, &100_i32, &10_000_i128, &10_000_i128, &0_i128, &0_i128);
 
-        let lower_info = client.get_tick_info(&-100_i32).unwrap();
-        let upper_info = client.get_tick_info(&100_i32).unwrap();
+        let lower_info = client.get_tick_info(&-100_i32);
+        let upper_info = client.get_tick_info(&100_i32);
 
         // lower tick: liquidity_net > 0, gross > 0
         assert!(lower_info.liquidity_gross > 0, "lower gross must be positive");
