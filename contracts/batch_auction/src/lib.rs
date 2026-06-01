@@ -7,18 +7,22 @@
 //!
 //! Flow:
 //!   1. Deploy and `initialize` with an admin and a batch window duration.
-//!   2. Traders call `submit_order` — tokens are escrowed immediately.
+//!   2. Traders call `submit_order` — tokens are escrowed immediately until
+//!      the current batch reaches the configured order cap.
 //!   3. After the window elapses, anyone calls `settle_batch`.
 //!   4. Settlement executes all orders atomically; output tokens go to traders.
 //!   5. Any trader may call `cancel_order` before settlement to reclaim tokens.
 
 #![no_std]
 
-use soroban_sdk::{
-    contract, contractimpl, contracttype, contracterror, symbol_short, Address, Env, Symbol, Vec,
-};
-use soroban_sdk::token::Client as SepTokenClient;
 use amm::AmmPoolClient;
+use soroban_sdk::token::Client as SepTokenClient;
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Symbol, Vec,
+};
+
+const DEFAULT_MAX_ORDERS: u32 = 50;
+const MAX_ORDERS_CEILING: u32 = 200;
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
@@ -26,12 +30,14 @@ use amm::AmmPoolClient;
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum AuctionError {
     AlreadyInitialized = 1,
-    Unauthorized       = 2,
-    OrderNotFound      = 3,
-    BatchWindowOpen    = 4,
-    NoOrders           = 5,
-    ZeroAmount         = 6,
-    DeadlineExceeded   = 7,
+    Unauthorized = 2,
+    OrderNotFound = 3,
+    BatchWindowOpen = 4,
+    NoOrders = 5,
+    ZeroAmount = 6,
+    DeadlineExceeded = 7,
+    BatchFull = 8,
+    InvalidMaxOrders = 9,
 }
 
 // ── Storage types ─────────────────────────────────────────────────────────────
@@ -54,9 +60,17 @@ pub enum DataKey {
     Admin,
     BatchWindowSecs,
     BatchOpenedAt,
+    MaxOrders,
     NextOrderId,
     Order(u64),
     PendingOrders,
+}
+
+fn max_orders(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::MaxOrders)
+        .unwrap_or(DEFAULT_MAX_ORDERS)
 }
 
 // ── Contract ──────────────────────────────────────────────────────────────────
@@ -83,9 +97,10 @@ impl BatchAuction {
         env.storage()
             .instance()
             .set(&DataKey::BatchWindowSecs, &batch_window_secs);
+        env.storage().instance().set(&DataKey::NextOrderId, &0_u64);
         env.storage()
             .instance()
-            .set(&DataKey::NextOrderId, &0_u64);
+            .set(&DataKey::MaxOrders, &DEFAULT_MAX_ORDERS);
         env.storage()
             .instance()
             .set(&DataKey::PendingOrders, &Vec::<u64>::new(&env));
@@ -118,6 +133,16 @@ impl BatchAuction {
         if amount_in <= 0 {
             return Err(AuctionError::ZeroAmount);
         }
+
+        let mut pending: Vec<u64> = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingOrders)
+            .unwrap_or_else(|| Vec::new(&env));
+        if pending.len() >= max_orders(&env) {
+            return Err(AuctionError::BatchFull);
+        }
+
         trader.require_auth();
 
         // Escrow input tokens immediately so the commitment is firm.
@@ -146,11 +171,6 @@ impl BatchAuction {
 
         env.storage().instance().set(&DataKey::Order(id), &order);
 
-        let mut pending: Vec<u64> = env
-            .storage()
-            .instance()
-            .get(&DataKey::PendingOrders)
-            .unwrap_or_else(|| Vec::new(&env));
         pending.push_back(id);
         env.storage()
             .instance()
@@ -170,11 +190,7 @@ impl BatchAuction {
     /// Cancel a pending order and refund escrowed tokens.
     ///
     /// Only the original trader may cancel their own order.
-    pub fn cancel_order(
-        env: Env,
-        trader: Address,
-        order_id: u64,
-    ) -> Result<(), AuctionError> {
+    pub fn cancel_order(env: Env, trader: Address, order_id: u64) -> Result<(), AuctionError> {
         trader.require_auth();
 
         let order: Order = env
@@ -212,10 +228,8 @@ impl BatchAuction {
             .instance()
             .set(&DataKey::PendingOrders, &updated);
 
-        env.events().publish(
-            (Symbol::new(&env, "order_cancelled"), trader),
-            (order_id,),
-        );
+        env.events()
+            .publish((Symbol::new(&env, "order_cancelled"), trader), (order_id,));
 
         Ok(())
     }
@@ -258,9 +272,15 @@ impl BatchAuction {
 
         let auction_addr = env.current_contract_address();
         let settlement_deadline = now + window_secs;
+        let order_limit = max_orders(&env);
+        let process_count = if pending.len() > order_limit {
+            order_limit
+        } else {
+            pending.len()
+        };
         let mut results = Vec::<i128>::new(&env);
 
-        for i in 0..pending.len() {
+        for i in 0..process_count {
             let order_id = pending.get(i).unwrap();
             let order: Order = env
                 .storage()
@@ -293,18 +313,20 @@ impl BatchAuction {
             env.storage().instance().remove(&DataKey::Order(order_id));
         }
 
-        // Reset for the next batch window.
-        env.storage()
-            .instance()
-            .set(&DataKey::PendingOrders, &Vec::<u64>::new(&env));
-        env.storage()
-            .instance()
-            .set(&DataKey::BatchOpenedAt, &now);
+        let mut remaining = Vec::<u64>::new(&env);
+        for i in process_count..pending.len() {
+            remaining.push_back(pending.get(i).unwrap());
+        }
 
-        env.events().publish(
-            (symbol_short!("settled"),),
-            (pending.len() as u32,),
-        );
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingOrders, &remaining);
+        if remaining.is_empty() {
+            env.storage().instance().set(&DataKey::BatchOpenedAt, &now);
+        }
+
+        env.events()
+            .publish((symbol_short!("settled"),), (process_count,));
 
         Ok(results)
     }
@@ -326,6 +348,30 @@ impl BatchAuction {
         orders
     }
 
+    /// Return compact batch capacity and timing metadata.
+    ///
+    /// The tuple is `(pending_count, max_orders, batch_opened_at,
+    /// batch_window_secs)`.
+    pub fn get_batch_info(env: Env) -> (u32, u32, u64, u64) {
+        let pending: Vec<u64> = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingOrders)
+            .unwrap_or_else(|| Vec::new(&env));
+        let opened_at: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::BatchOpenedAt)
+            .unwrap_or(0);
+        let window_secs: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::BatchWindowSecs)
+            .unwrap_or(60);
+
+        (pending.len(), max_orders(&env), opened_at, window_secs)
+    }
+
     /// Update the batch window duration. Admin-only.
     pub fn set_batch_window(env: Env, batch_window_secs: u64) -> Result<(), AuctionError> {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
@@ -333,10 +379,29 @@ impl BatchAuction {
         env.storage()
             .instance()
             .set(&DataKey::BatchWindowSecs, &batch_window_secs);
-        env.events().publish(
-            (Symbol::new(&env, "window_updated"),),
-            (batch_window_secs,),
-        );
+        env.events()
+            .publish((Symbol::new(&env, "window_updated"),), (batch_window_secs,));
+        Ok(())
+    }
+
+    /// Update the maximum number of orders accepted into a batch. Admin-only.
+    ///
+    /// `n` must be between 1 and `MAX_ORDERS_CEILING`, inclusive. The ceiling
+    /// keeps settlement cost bounded even if governance/admin configuration is
+    /// changed under production load.
+    pub fn set_max_orders(env: Env, admin: Address, n: u32) -> Result<(), AuctionError> {
+        let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        if stored_admin != admin {
+            return Err(AuctionError::Unauthorized);
+        }
+        admin.require_auth();
+        if n == 0 || n > MAX_ORDERS_CEILING {
+            return Err(AuctionError::InvalidMaxOrders);
+        }
+
+        env.storage().instance().set(&DataKey::MaxOrders, &n);
+        env.events()
+            .publish((Symbol::new(&env, "max_orders_updated"),), (n,));
         Ok(())
     }
 }
@@ -365,13 +430,7 @@ mod tests {
         );
         AmmPoolClient::new(env, &amm_addr)
             .initialize(
-                &amm_addr,
-                token_a,
-                token_b,
-                &lp_addr,
-                &30_i128,
-                &amm_addr,
-                &0_i128,
+                &amm_addr, token_a, token_b, &lp_addr, &30_i128, &amm_addr, &0_i128,
             )
             .unwrap();
         amm_addr
@@ -419,10 +478,7 @@ mod tests {
         StellarAssetClient::new(&env, &ta).mint(&trader, &100_000_i128);
 
         BatchAuctionClient::new(&env, &auction_addr)
-            .submit_order(
-                &trader, &pool, &ta, &tb,
-                &10_000_i128, &0_i128, &u64::MAX,
-            )
+            .submit_order(&trader, &pool, &ta, &tb, &10_000_i128, &0_i128, &u64::MAX)
             .unwrap();
 
         // Advance past the batch window.
@@ -457,10 +513,7 @@ mod tests {
         StellarAssetClient::new(&env, &ta).mint(&trader, &100_000_i128);
 
         let order_id = BatchAuctionClient::new(&env, &auction_addr)
-            .submit_order(
-                &trader, &pool, &ta, &tb,
-                &10_000_i128, &0_i128, &u64::MAX,
-            )
+            .submit_order(&trader, &pool, &ta, &tb, &10_000_i128, &0_i128, &u64::MAX)
             .unwrap();
 
         // Tokens were escrowed — trader's balance decreased.
@@ -499,8 +552,7 @@ mod tests {
             .unwrap();
 
         // Window has not elapsed — should return BatchWindowOpen error.
-        let result = BatchAuctionClient::new(&env, &auction_addr)
-            .try_settle_batch();
+        let result = BatchAuctionClient::new(&env, &auction_addr).try_settle_batch();
         assert!(result.is_err());
     }
 
@@ -542,5 +594,81 @@ mod tests {
         // Both traders received token_b.
         assert!(StellarTokenClient::new(&env, &tb).balance(&trader1) > 0);
         assert!(StellarTokenClient::new(&env, &tb).balance(&trader2) > 0);
+    }
+
+    #[test]
+    fn test_submit_beyond_cap_returns_batch_full() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().set_timestamp(1000);
+
+        let (ta, tb, pool, admin) = setup(&env);
+
+        let auction_addr = env.register_contract(None, BatchAuction);
+        let client = BatchAuctionClient::new(&env, &auction_addr);
+        client.initialize(&admin, &60_u64).unwrap();
+        client.set_max_orders(&admin, &2_u32).unwrap();
+
+        let trader = Address::generate(&env);
+        StellarAssetClient::new(&env, &ta).mint(&trader, &10_000_i128);
+
+        client
+            .submit_order(&trader, &pool, &ta, &tb, &1_000_i128, &0_i128, &u64::MAX)
+            .unwrap();
+        client
+            .submit_order(&trader, &pool, &ta, &tb, &1_000_i128, &0_i128, &u64::MAX)
+            .unwrap();
+
+        let result =
+            client.try_submit_order(&trader, &pool, &ta, &tb, &1_000_i128, &0_i128, &u64::MAX);
+        assert_eq!(result, Err(Ok(AuctionError::BatchFull)));
+
+        let (pending_count, max_orders, opened_at, window_secs) = client.get_batch_info();
+        assert_eq!(pending_count, 2);
+        assert_eq!(max_orders, 2);
+        assert_eq!(opened_at, 1000);
+        assert_eq!(window_secs, 60);
+
+        let trader_balance = StellarTokenClient::new(&env, &ta).balance(&trader);
+        assert_eq!(trader_balance, 8_000_i128);
+    }
+
+    #[test]
+    fn test_settlement_with_exactly_max_orders_succeeds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().set_timestamp(1000);
+
+        let (ta, tb, pool, admin) = setup(&env);
+
+        let auction_addr = env.register_contract(None, BatchAuction);
+        let client = BatchAuctionClient::new(&env, &auction_addr);
+        client.initialize(&admin, &30_u64).unwrap();
+        client.set_max_orders(&admin, &3_u32).unwrap();
+
+        let trader = Address::generate(&env);
+        StellarAssetClient::new(&env, &ta).mint(&trader, &10_000_i128);
+
+        for _ in 0..3 {
+            client
+                .submit_order(&trader, &pool, &ta, &tb, &1_000_i128, &0_i128, &u64::MAX)
+                .unwrap();
+        }
+
+        env.ledger().set_timestamp(1031);
+
+        let results = client.settle_batch().unwrap();
+        assert_eq!(results.len(), 3);
+        for i in 0..results.len() {
+            assert!(results.get(i).unwrap() > 0);
+        }
+
+        let (pending_count, max_orders, opened_at, window_secs) = client.get_batch_info();
+        assert_eq!(pending_count, 0);
+        assert_eq!(max_orders, 3);
+        assert_eq!(opened_at, 1031);
+        assert_eq!(window_secs, 30);
+        assert_eq!(client.get_pending_orders().len(), 0);
+        assert!(StellarTokenClient::new(&env, &tb).balance(&trader) > 0);
     }
 }

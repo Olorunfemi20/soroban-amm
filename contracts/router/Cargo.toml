@@ -13,7 +13,6 @@ testutils = [
     "token/testutils",
     "factory/testutils",
 ]
-testutils = ["soroban-sdk/testutils"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
