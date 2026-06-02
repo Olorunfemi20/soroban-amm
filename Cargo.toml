@@ -22,6 +22,7 @@ members = [
   "contracts/cl_position_nft",
   "contracts/v2_to_v3_migration",
   "contracts/pol_vesting",
+  "benches",
 ]
 
 [workspace.dependencies]
