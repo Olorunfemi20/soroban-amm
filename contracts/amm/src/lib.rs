@@ -10,7 +10,7 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractclient, contractimpl, contracterror, contracttype, symbol_short, Address,
+    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address,
     Bytes, BytesN, Env, Symbol,
 };
 // Export compiled WASM for tests/dev usage when the `testutils` feature is enabled.
@@ -59,35 +59,37 @@ pub trait LpTokenInterface {
 #[contracterror]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum AmmError {
-    AlreadyInitialized   = 1,
-    InvalidFeeBps        = 2,
-    InsufficientShares   = 3,
-    DeadlineExceeded     = 4,
-    SlippageExceeded     = 5,
-    Paused               = 6,
-    Unauthorized         = 7,
-    ZeroAmount           = 8,
-    InvalidToken         = 9,
-    EmptyPool            = 10,
+    AlreadyInitialized = 1,
+    InvalidFeeBps = 2,
+    InsufficientShares = 3,
+    DeadlineExceeded = 4,
+    SlippageExceeded = 5,
+    Paused = 6,
+    Unauthorized = 7,
+    ZeroAmount = 8,
+    InvalidToken = 9,
+    EmptyPool = 10,
     InsufficientLiquidity = 11,
-    NoPendingAdmin       = 12,
-    WrongAdmin           = 13,
+    NoPendingAdmin = 12,
+    WrongAdmin = 13,
     /// A reentrant call was detected while a flash loan or state-mutating
     /// operation was already in progress. The receiver contract must not
     /// call back into this pool during an `on_flash_loan` callback.
-    Reentrant            = 14,
+    Reentrant = 14,
     /// The circuit breaker tripped: spot price deviated more than the
     /// configured threshold in a single block.  The pool has been
     /// automatically paused.  Recovery requires the cooldown period to
     /// elapse and a call to `try_circuit_breaker_recovery`, or a direct
     /// admin/governance `unpause`.
-    CircuitBreaker       = 15,
+    CircuitBreaker = 15,
     /// A fee-on-transfer token deducted more fees than the caller's
     /// `min_received` threshold permitted. The pool received fewer tokens
     /// than requested; the call is reverted to protect the caller.
-    FotSlippage          = 16,
+    FotSlippage = 16,
     /// Spot price deviated beyond the configured oracle tolerance.
     OracleDeviationExceeded = 17,
+    /// Flash-loan receiver did not return the borrowed amounts plus fees.
+    FlashLoanRepaymentFailed = 18,
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
@@ -207,16 +209,11 @@ pub struct MultisigProposal {
 
 #[contractclient(name = "FlashLoanReceiverClient")]
 pub trait FlashLoanReceiver {
-    fn on_flash_loan(env: Env, token: Address, amount: i128, fee: i128, data: Bytes) -> bool;
-}
-
-#[contractclient(name = "FlashLoanBothReceiverClient")]
-pub trait FlashLoanBothReceiver {
-    fn on_flash_loan_both(
+    fn on_flash_loan(
         env: Env,
-        amount_a: i128,
+        token_a_amount: i128,
+        token_b_amount: i128,
         fee_a: i128,
-        amount_b: i128,
         fee_b: i128,
         data: Bytes,
     ) -> bool;
@@ -363,12 +360,17 @@ impl AmmPool {
         // Issue #292: LP rebate disabled by default.
         env.storage().instance().set(&DataKey::LpRebateBps, &0_i128);
         // Issue #293: multisig disabled by default (empty signers, quorum 0).
-        env.storage().instance().set(&DataKey::MultisigQuorum, &0_u32);
         env.storage()
             .instance()
-            .set(&DataKey::MultisigSigners, &soroban_sdk::Vec::<Address>::new(&env));
+            .set(&DataKey::MultisigQuorum, &0_u32);
+        env.storage().instance().set(
+            &DataKey::MultisigSigners,
+            &soroban_sdk::Vec::<Address>::new(&env),
+        );
         // Issue #294: minimum liquidity not yet locked.
-        env.storage().instance().set(&DataKey::MinLiquidityLocked, &false);
+        env.storage()
+            .instance()
+            .set(&DataKey::MinLiquidityLocked, &false);
         // Circuit breaker: default threshold 50 % (5 000 bps), cooldown 600 s.
         env.storage()
             .instance()
@@ -472,12 +474,18 @@ impl AmmPool {
 
         // Transfer reserves to recipient
         if reserve_a > 0 {
-            SepTokenClient::new(&env, &token_a)
-                .transfer(&env.current_contract_address(), &to, &reserve_a);
+            SepTokenClient::new(&env, &token_a).transfer(
+                &env.current_contract_address(),
+                &to,
+                &reserve_a,
+            );
         }
         if reserve_b > 0 {
-            SepTokenClient::new(&env, &token_b)
-                .transfer(&env.current_contract_address(), &to, &reserve_b);
+            SepTokenClient::new(&env, &token_b).transfer(
+                &env.current_contract_address(),
+                &to,
+                &reserve_b,
+            );
         }
 
         // Zero out reserves
@@ -485,7 +493,11 @@ impl AmmPool {
         env.storage().instance().set(&DataKey::ReserveB, &0_i128);
 
         // Emit event for audit trail
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "emergency_withdraw"), admin.clone()), (to, reserve_a, reserve_b));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "emergency_withdraw"), admin.clone()),
+            (to, reserve_a, reserve_b)
+        );
 
         Ok(())
     }
@@ -533,7 +545,11 @@ impl AmmPool {
             .instance()
             .set(&DataKey::CircuitBreakerCooldown, &cooldown_secs);
 
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "cb_config"),), (threshold_bps, cooldown_secs));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "cb_config"),),
+            (threshold_bps, cooldown_secs)
+        );
 
         Ok(())
     }
@@ -673,7 +689,11 @@ impl AmmPool {
                 .instance()
                 .set(&DataKey::CircuitBreakerTriggeredAt, &now);
 
-            soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "circuit_break"),), (baseline_price, current_price, deviation_bps, threshold_bps));
+            soroban_amm_sdk::emit_versioned_event!(
+                env,
+                (Symbol::new(env, "circuit_break"),),
+                (baseline_price, current_price, deviation_bps, threshold_bps)
+            );
 
             return Err(AmmError::CircuitBreaker);
         }
@@ -685,7 +705,12 @@ impl AmmPool {
     ///
     /// Set `protocol_fee_bps` to 0 to disable protocol fee collection.
     /// `protocol_fee_bps` must be ≤ the pool's `fee_bps`.
-    pub fn set_protocol_fee(env: Env, admin: Address, recipient: Address, protocol_fee_bps: i128) -> Result<(), AmmError> {
+    pub fn set_protocol_fee(
+        env: Env,
+        admin: Address,
+        recipient: Address,
+        protocol_fee_bps: i128,
+    ) -> Result<(), AmmError> {
         let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         if admin != stored_admin {
             return Err(AmmError::Unauthorized);
@@ -736,7 +761,11 @@ impl AmmPool {
         env.storage()
             .instance()
             .set(&DataKey::LpRebateBps, &lp_rebate_bps);
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "lp_rebate_set"), admin), (lp_rebate_bps,));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "lp_rebate_set"), admin),
+            (lp_rebate_bps,)
+        );
         Ok(())
     }
 
@@ -776,13 +805,19 @@ impl AmmPool {
             .instance()
             .set(&DataKey::MultisigQuorum, &quorum);
         // Clear any pending proposal when config changes.
-        env.storage()
-            .instance()
-            .set(&DataKey::MultisigProposalRecipient, &Option::<Address>::None);
-        env.storage()
-            .instance()
-            .set(&DataKey::MultisigProposalApprovals, &soroban_sdk::Vec::<Address>::new(&env));
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "multisig_set"), admin), (quorum,));
+        env.storage().instance().set(
+            &DataKey::MultisigProposalRecipient,
+            &Option::<Address>::None,
+        );
+        env.storage().instance().set(
+            &DataKey::MultisigProposalApprovals,
+            &soroban_sdk::Vec::<Address>::new(&env),
+        );
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "multisig_set"), admin),
+            (quorum,)
+        );
         Ok(())
     }
 
@@ -847,13 +882,18 @@ impl AmmPool {
         if !approvals.contains(&signer) {
             approvals.push_back(signer.clone());
         }
-        env.storage()
-            .instance()
-            .set(&DataKey::MultisigProposalRecipient, &Some(recipient.clone()));
+        env.storage().instance().set(
+            &DataKey::MultisigProposalRecipient,
+            &Some(recipient.clone()),
+        );
         env.storage()
             .instance()
             .set(&DataKey::MultisigProposalApprovals, &approvals);
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "ms_proposed"), signer), (recipient, approvals.len()));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "ms_proposed"), signer),
+            (recipient, approvals.len())
+        );
         Ok(())
     }
 
@@ -877,10 +917,7 @@ impl AmmPool {
     /// Execute the pending multisig emergency withdrawal once quorum is reached.
     ///
     /// Any signer may call this after enough approvals have been collected.
-    pub fn exec_multisig_emergency_wd(
-        env: Env,
-        signer: Address,
-    ) -> Result<(), AmmError> {
+    pub fn exec_multisig_emergency_wd(env: Env, signer: Address) -> Result<(), AmmError> {
         signer.require_auth();
         let quorum: u32 = env
             .storage()
@@ -909,7 +946,7 @@ impl AmmPool {
             .instance()
             .get(&DataKey::MultisigProposalApprovals)
             .unwrap_or_else(|| soroban_sdk::Vec::new(&env));
-        if (approvals.len() as u32) < quorum {
+        if approvals.len() < quorum {
             return Err(AmmError::InsufficientShares);
         }
         let token_a: Address = env.storage().instance().get(&DataKey::TokenA).unwrap();
@@ -917,23 +954,35 @@ impl AmmPool {
         let reserve_a = Self::get_reserve_a(env.clone());
         let reserve_b = Self::get_reserve_b(env.clone());
         if reserve_a > 0 {
-            SepTokenClient::new(&env, &token_a)
-                .transfer(&env.current_contract_address(), &to, &reserve_a);
+            SepTokenClient::new(&env, &token_a).transfer(
+                &env.current_contract_address(),
+                &to,
+                &reserve_a,
+            );
         }
         if reserve_b > 0 {
-            SepTokenClient::new(&env, &token_b)
-                .transfer(&env.current_contract_address(), &to, &reserve_b);
+            SepTokenClient::new(&env, &token_b).transfer(
+                &env.current_contract_address(),
+                &to,
+                &reserve_b,
+            );
         }
         env.storage().instance().set(&DataKey::ReserveA, &0_i128);
         env.storage().instance().set(&DataKey::ReserveB, &0_i128);
         // Clear proposal.
-        env.storage()
-            .instance()
-            .set(&DataKey::MultisigProposalRecipient, &Option::<Address>::None);
-        env.storage()
-            .instance()
-            .set(&DataKey::MultisigProposalApprovals, &soroban_sdk::Vec::<Address>::new(&env));
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "ms_ew"), signer), (to, reserve_a, reserve_b));
+        env.storage().instance().set(
+            &DataKey::MultisigProposalRecipient,
+            &Option::<Address>::None,
+        );
+        env.storage().instance().set(
+            &DataKey::MultisigProposalApprovals,
+            &soroban_sdk::Vec::<Address>::new(&env),
+        );
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "ms_ew"), signer),
+            (to, reserve_a, reserve_b)
+        );
         Ok(())
     }
 
@@ -958,8 +1007,8 @@ impl AmmPool {
             .get(&DataKey::MaxOracleDeviationBps)
             .unwrap_or(500);
 
-        let agg = OracleAggregatorClient::new(env, &oracle_addr)
-            .get_price_safe(token_in, token_out);
+        let agg =
+            OracleAggregatorClient::new(env, &oracle_addr).get_price_safe(token_in, token_out);
         if amount_in <= 0 || agg.confidence == 0 || agg.price <= 0 {
             return Ok(());
         }
@@ -1024,7 +1073,11 @@ impl AmmPool {
         env.storage()
             .instance()
             .set(&DataKey::FlashLoanFeeBps, &new_fee_bps);
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "flash_fee_upd"), admin.clone()), (new_fee_bps,));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "flash_fee_upd"), admin.clone()),
+            (new_fee_bps,)
+        );
         Ok(())
     }
 
@@ -1033,7 +1086,11 @@ impl AmmPool {
     /// # Panics
     /// - If `current_admin` is not the stored admin.
     /// - If `current_admin` auth fails.
-    pub fn propose_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), AmmError> {
+    pub fn propose_admin(
+        env: Env,
+        current_admin: Address,
+        new_admin: Address,
+    ) -> Result<(), AmmError> {
         let stored: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         if current_admin != stored {
             return Err(AmmError::Unauthorized);
@@ -1042,7 +1099,11 @@ impl AmmPool {
         env.storage()
             .instance()
             .set(&DataKey::PendingAdmin, &Some(new_admin.clone()));
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "admin_nominated"),), (current_admin, new_admin));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "admin_nominated"),),
+            (current_admin, new_admin)
+        );
         Ok(())
     }
 
@@ -1250,7 +1311,7 @@ impl AmmPool {
             return Err(AmmError::ZeroAmount);
         }
 
-       // Checkpoint TWAP before updating reserves; reuse the reserves it read.
+        // Checkpoint TWAP before updating reserves; reuse the reserves it read.
         let (reserve_a, reserve_b) = Self::checkpoint_twap(&env);
         // Checkpoint oracles before updating reserves.
         Self::checkpoint_oracles(&env);
@@ -1326,7 +1387,11 @@ impl AmmPool {
         }
         lp_client.mint(&provider, &shares_to_provider);
 
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "add_liquidity"), provider), (amount_a, amount_b, shares_to_provider));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "add_liquidity"), provider),
+            (amount_a, amount_b, shares_to_provider)
+        );
 
         Ok(shares_to_provider)
     }
@@ -1394,7 +1459,6 @@ impl AmmPool {
         let token_b: Address = env.storage().instance().get(&DataKey::TokenB).unwrap();
         let lp_token: Address = env.storage().instance().get(&DataKey::LpToken).unwrap();
 
-        
         let total_shares = Self::get_total_shares(env.clone());
 
         let out_a = shares * reserve_a / total_shares;
@@ -1425,7 +1489,11 @@ impl AmmPool {
         client_a.transfer(&env.current_contract_address(), &provider, &out_a);
         client_b.transfer(&env.current_contract_address(), &provider, &out_b);
 
-        soroban_amm_sdk::emit_versioned_event!(env, (symbol_short!("rm_liq"),), (provider.clone(), shares, out_a, out_b));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (symbol_short!("rm_liq"),),
+            (provider.clone(), shares, out_a, out_b)
+        );
 
         Ok((out_a, out_b))
     }
@@ -1631,7 +1699,11 @@ impl AmmPool {
         let client_out = SepTokenClient::new(&env, &token_out);
         client_out.transfer(&env.current_contract_address(), &provider, &total_out);
 
-        soroban_amm_sdk::emit_versioned_event!(env, (symbol_short!("rm_liq_1s"),), (provider.clone(), shares, token_out.clone(), total_out));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (symbol_short!("rm_liq_1s"),),
+            (provider.clone(), shares, token_out.clone(), total_out)
+        );
 
         Ok(total_out)
     }
@@ -1689,7 +1761,7 @@ impl AmmPool {
             return Err(AmmError::ZeroAmount);
         }
 
-// Checkpoint TWAP before updating reserves; reuse the reserves it read.
+        // Checkpoint TWAP before updating reserves; reuse the reserves it read.
         let (reserve_a, reserve_b) = Self::checkpoint_twap(&env);
         // Checkpoint oracles before updating reserves.
         Self::checkpoint_oracles(&env);
@@ -1762,9 +1834,10 @@ impl AmmPool {
         let net_protocol_fee = protocol_fee - lp_rebate;
         // Update reserves (net protocol fee held outside LP reserves; rebate stays in reserves).
         if token_in == token_a {
-            env.storage()
-                .instance()
-                .set(&DataKey::ReserveA, &(reserve_in + amount_in - net_protocol_fee));
+            env.storage().instance().set(
+                &DataKey::ReserveA,
+                &(reserve_in + amount_in - net_protocol_fee),
+            );
             env.storage()
                 .instance()
                 .set(&DataKey::ReserveB, &(reserve_out - amount_out));
@@ -1779,9 +1852,10 @@ impl AmmPool {
                     .set(&DataKey::AccruedFeeA, &(accrued + net_protocol_fee));
             }
         } else {
-            env.storage()
-                .instance()
-                .set(&DataKey::ReserveB, &(reserve_in + amount_in - net_protocol_fee));
+            env.storage().instance().set(
+                &DataKey::ReserveB,
+                &(reserve_in + amount_in - net_protocol_fee),
+            );
             env.storage()
                 .instance()
                 .set(&DataKey::ReserveA, &(reserve_out - amount_out));
@@ -1801,7 +1875,11 @@ impl AmmPool {
             (Symbol::new(&env, "swap"), trader.clone()),
             (token_in.clone(), amount_in, token_out.clone(), amount_out),
         );
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "swap"), trader), (token_in, amount_in, token_out, amount_out, None::<Address>));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "swap"), trader),
+            (token_in, amount_in, token_out, amount_out, None::<Address>)
+        );
 
         Ok(amount_out)
     }
@@ -1834,7 +1912,6 @@ impl AmmPool {
         amount_out: i128,
         max_in: i128,
         deadline: u64,
-        
     ) -> Result<i128, AmmError> {
         if deadline < env.ledger().timestamp() {
             return Err(AmmError::DeadlineExceeded);
@@ -1915,9 +1992,10 @@ impl AmmPool {
 
         // Update reserves (net protocol fee held outside LP reserves; rebate stays in reserves).
         if token_in == token_a {
-            env.storage()
-                .instance()
-                .set(&DataKey::ReserveA, &(reserve_a + amount_in - net_protocol_fee));
+            env.storage().instance().set(
+                &DataKey::ReserveA,
+                &(reserve_a + amount_in - net_protocol_fee),
+            );
             env.storage()
                 .instance()
                 .set(&DataKey::ReserveB, &(reserve_b - amount_out));
@@ -1932,9 +2010,10 @@ impl AmmPool {
                     .set(&DataKey::AccruedFeeA, &(accrued + net_protocol_fee));
             }
         } else {
-            env.storage()
-                .instance()
-                .set(&DataKey::ReserveB, &(reserve_b + amount_in - net_protocol_fee));
+            env.storage().instance().set(
+                &DataKey::ReserveB,
+                &(reserve_b + amount_in - net_protocol_fee),
+            );
             env.storage()
                 .instance()
                 .set(&DataKey::ReserveA, &(reserve_a - amount_out));
@@ -1954,7 +2033,11 @@ impl AmmPool {
             (Symbol::new(&env, "swap"), trader.clone()),
             (token_in.clone(), amount_in, token_out.clone(), amount_out),
         );
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "swap"), trader), (token_in, amount_in, token_out, amount_out, None::<Address>));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "swap"), trader),
+            (token_in, amount_in, token_out, amount_out, None::<Address>)
+        );
 
         Ok(amount_in)
     }
@@ -2020,14 +2103,14 @@ impl AmmPool {
     pub fn flash_loan(
         env: Env,
         receiver: Address,
-        token: Address,
-        amount: i128,
+        amount_a: i128,
+        amount_b: i128,
         data: Bytes,
-    ) -> Result<i128, AmmError> {
+    ) -> Result<(i128, i128), AmmError> {
         if Self::is_paused(env.clone()) {
             return Err(AmmError::Paused);
         }
-        if amount <= 0 {
+        if amount_a < 0 || amount_b < 0 || (amount_a == 0 && amount_b == 0) {
             return Err(AmmError::ZeroAmount);
         }
 
@@ -2046,72 +2129,79 @@ impl AmmPool {
 
         let token_a: Address = env.storage().instance().get(&DataKey::TokenA).unwrap();
         let token_b: Address = env.storage().instance().get(&DataKey::TokenB).unwrap();
-        let reserve = if token == token_a {
-           reserve_a
-        } else if token == token_b {
-            reserve_b
-        } else {
-            // exit_lock is not needed: returning Err reverts all storage writes.
-            return Err(AmmError::InvalidToken);
-        };
-        if reserve < amount {
+        if reserve_a < amount_a || reserve_b < amount_b {
             return Err(AmmError::InsufficientLiquidity);
         }
 
         let fee_bps = Self::get_flash_loan_fee_bps(env.clone());
-        let fee = if fee_bps > 0 {
-            (amount * fee_bps / 10_000).max(1)
+        let fee_a = if fee_bps > 0 && amount_a > 0 {
+            (amount_a * fee_bps / 10_000).max(1)
+        } else {
+            0
+        };
+        let fee_b = if fee_bps > 0 && amount_b > 0 {
+            (amount_b * fee_bps / 10_000).max(1)
         } else {
             0
         };
         let pool = env.current_contract_address();
-        let token_client = SepTokenClient::new(&env, &token);
-        let balance_before = token_client.balance(&pool);
+        let token_a_client = SepTokenClient::new(&env, &token_a);
+        let token_b_client = SepTokenClient::new(&env, &token_b);
+        let balance_a_before = token_a_client.balance(&pool);
+        let balance_b_before = token_b_client.balance(&pool);
 
-        token_client.transfer(&pool, &receiver, &amount);
+        if amount_a > 0 {
+            token_a_client.transfer(&pool, &receiver, &amount_a);
+        }
+        if amount_b > 0 {
+            token_b_client.transfer(&pool, &receiver, &amount_b);
+        }
 
         // ── External callback (lock is held) ─────────────────────────────────
         // The receiver cannot reenter this pool because Locked == true.
         // Any reentrant call will return AmmError::Reentrant.
         let accepted = FlashLoanReceiverClient::new(&env, &receiver)
-            .on_flash_loan(&token, &amount, &fee, &data);
+            .on_flash_loan(&amount_a, &amount_b, &fee_a, &fee_b, &data);
         if !accepted {
-            return Err(AmmError::InsufficientLiquidity);
+            return Err(AmmError::FlashLoanRepaymentFailed);
         }
 
-        let balance_after = token_client.balance(&pool);
-        if balance_after < balance_before + fee {
-            return Err(AmmError::InsufficientLiquidity);
+        let balance_a_after = token_a_client.balance(&pool);
+        let balance_b_after = token_b_client.balance(&pool);
+        if balance_a_after < balance_a_before + fee_a || balance_b_after < balance_b_before + fee_b
+        {
+            return Err(AmmError::FlashLoanRepaymentFailed);
         }
 
-        let accrued_fee = if token == token_a {
-            env.storage()
-                .instance()
-                .get(&DataKey::AccruedFeeA)
-                .unwrap_or(0)
-        } else {
-            env.storage()
-                .instance()
-                .get(&DataKey::AccruedFeeB)
-                .unwrap_or(0)
-        };
-        let reserve_after = balance_after - accrued_fee;
-        if token == token_a {
-            env.storage()
-                .instance()
-                .set(&DataKey::ReserveA, &reserve_after);
-        } else {
-            env.storage()
-                .instance()
-                .set(&DataKey::ReserveB, &reserve_after);
-        }
+        let accrued_fee_a = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccruedFeeA)
+            .unwrap_or(0);
+        let accrued_fee_b = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccruedFeeB)
+            .unwrap_or(0);
+        let reserve_a_after = balance_a_after - accrued_fee_a;
+        let reserve_b_after = balance_b_after - accrued_fee_b;
+        env.storage()
+            .instance()
+            .set(&DataKey::ReserveA, &reserve_a_after);
+        env.storage()
+            .instance()
+            .set(&DataKey::ReserveB, &reserve_b_after);
 
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "flash_loan"), receiver), (token, amount, fee));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "flash_loan"), receiver),
+            (amount_a, amount_b, fee_a, fee_b)
+        );
 
         // Release the lock only on the success path; on error paths Soroban
         // reverts all storage writes (including the lock) automatically.
         Self::exit_lock(&env);
-        Ok(fee)
+        Ok((fee_a, fee_b))
     }
 
     // ── Quotes (read-only) ────────────────────────────────────────────────────
@@ -2184,7 +2274,11 @@ impl AmmPool {
     /// Returns the expected output, total fee taken, effective execution price,
     /// spot price, and price impact — all computed from current reserve state.
     /// `amount_out` is guaranteed to match `get_amount_out` for the same inputs.
-    pub fn simulate_swap(env: Env, token_in: Address, amount_in: i128) -> Result<SwapSimulation, AmmError> {
+    pub fn simulate_swap(
+        env: Env,
+        token_in: Address,
+        amount_in: i128,
+    ) -> Result<SwapSimulation, AmmError> {
         if amount_in <= 0 {
             return Err(AmmError::ZeroAmount);
         }
@@ -2265,7 +2359,6 @@ impl AmmPool {
     /// - `admin` — the pool administrator.
     /// - `fee_recipient` — recipient of accrued protocol fees.
     /// - `protocol_fee_bps` — protocol fee in basis points (subset of `fee_bps`).
-    
     pub fn get_fee_info(env: Env) -> i128 {
         env.storage().instance().get(&DataKey::FeeBps).unwrap()
     }
@@ -2447,9 +2540,10 @@ impl AmmPool {
         };
 
         if token_in == token_a {
-            env.storage()
-                .instance()
-                .set(&DataKey::ReserveA, &(reserve_in + actual_received - protocol_fee));
+            env.storage().instance().set(
+                &DataKey::ReserveA,
+                &(reserve_in + actual_received - protocol_fee),
+            );
             env.storage()
                 .instance()
                 .set(&DataKey::ReserveB, &(reserve_out - amount_out));
@@ -2464,9 +2558,10 @@ impl AmmPool {
                     .set(&DataKey::AccruedFeeA, &(accrued + protocol_fee));
             }
         } else {
-            env.storage()
-                .instance()
-                .set(&DataKey::ReserveB, &(reserve_in + actual_received - protocol_fee));
+            env.storage().instance().set(
+                &DataKey::ReserveB,
+                &(reserve_in + actual_received - protocol_fee),
+            );
             env.storage()
                 .instance()
                 .set(&DataKey::ReserveA, &(reserve_out - amount_out));
@@ -2483,10 +2578,18 @@ impl AmmPool {
         }
 
         if actual_received < amount_in {
-            soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "fot_detected"), token_in.clone()), (amount_in, actual_received));
+            soroban_amm_sdk::emit_versioned_event!(
+                env,
+                (Symbol::new(&env, "fot_detected"), token_in.clone()),
+                (amount_in, actual_received)
+            );
         }
 
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "swap"), trader), (token_in, actual_received, token_out, amount_out, referrer));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "swap"), trader),
+            (token_in, actual_received, token_out, amount_out, referrer)
+        );
 
         Ok((amount_out, actual_received))
     }
@@ -2583,7 +2686,11 @@ impl AmmPool {
 
         LpTokenClient::new(&env, &lp_token).mint(&provider, &shares);
 
-        soroban_amm_sdk::emit_versioned_event!(env, (Symbol::new(&env, "add_liquidity"), provider), (actual_a, actual_b, shares));
+        soroban_amm_sdk::emit_versioned_event!(
+            env,
+            (Symbol::new(&env, "add_liquidity"), provider),
+            (actual_a, actual_b, shares)
+        );
 
         Ok(shares)
     }
@@ -2686,23 +2793,38 @@ pub(crate) mod tests {
     #[contracttype]
     enum ReceiverDataKey {
         Amm,
+        TokenA,
+        TokenB,
         ShouldRepay,
     }
     #[contract]
     pub(crate) struct MockFlashLoanReceiver;
     #[contractimpl]
     impl MockFlashLoanReceiver {
-        pub fn initialize(env: Env, amm: Address, should_repay: bool) {
+        pub fn initialize(
+            env: Env,
+            amm: Address,
+            token_a: Address,
+            token_b: Address,
+            should_repay: bool,
+        ) {
             env.storage().instance().set(&ReceiverDataKey::Amm, &amm);
+            env.storage()
+                .instance()
+                .set(&ReceiverDataKey::TokenA, &token_a);
+            env.storage()
+                .instance()
+                .set(&ReceiverDataKey::TokenB, &token_b);
             env.storage()
                 .instance()
                 .set(&ReceiverDataKey::ShouldRepay, &should_repay);
         }
         pub fn on_flash_loan(
             env: Env,
-            token: Address,
-            amount: i128,
-            fee: i128,
+            amount_a: i128,
+            amount_b: i128,
+            fee_a: i128,
+            fee_b: i128,
             _data: Bytes,
         ) -> bool {
             let should_repay = env
@@ -2712,8 +2834,30 @@ pub(crate) mod tests {
                 .unwrap_or(false);
             if should_repay {
                 let amm: Address = env.storage().instance().get(&ReceiverDataKey::Amm).unwrap();
-                let token_client = SepTokenClient::new(&env, &token);
-                token_client.transfer(&env.current_contract_address(), &amm, &(amount + fee));
+                let token_a: Address = env
+                    .storage()
+                    .instance()
+                    .get(&ReceiverDataKey::TokenA)
+                    .unwrap();
+                let token_b: Address = env
+                    .storage()
+                    .instance()
+                    .get(&ReceiverDataKey::TokenB)
+                    .unwrap();
+                if amount_a > 0 || fee_a > 0 {
+                    SepTokenClient::new(&env, &token_a).transfer(
+                        &env.current_contract_address(),
+                        &amm,
+                        &(amount_a + fee_a),
+                    );
+                }
+                if amount_b > 0 || fee_b > 0 {
+                    SepTokenClient::new(&env, &token_b).transfer(
+                        &env.current_contract_address(),
+                        &amm,
+                        &(amount_b + fee_b),
+                    );
+                }
             }
             true
         }
@@ -3549,7 +3693,8 @@ pub(crate) mod tests {
         let swap_event = events
             .iter()
             .find(|e| {
-                e.0 == amm.address && e.1 == (Symbol::new(env, "swap"), trader.clone()).into_val(env)
+                e.0 == amm.address
+                    && e.1 == (Symbol::new(env, "swap"), trader.clone()).into_val(env)
             })
             .expect("swap event not found");
 
@@ -4126,7 +4271,13 @@ pub(crate) mod tests {
         let provider = Address::generate(env);
         ta_sac.mint(&provider, &1_000_000_i128);
         tb_sac.mint(&provider, &1_000_000_i128);
-        amm.add_liquidity(&provider, &1_000_000_i128, &1_000_000_i128, &0_i128, &u64::MAX);
+        amm.add_liquidity(
+            &provider,
+            &1_000_000_i128,
+            &1_000_000_i128,
+            &0_i128,
+            &u64::MAX,
+        );
 
         let trader = Address::generate(env);
         ta_sac.mint(&trader, &100_000_i128);
@@ -4150,7 +4301,13 @@ pub(crate) mod tests {
         let seeder = Address::generate(env);
         ta_sac.mint(&seeder, &1_000_000_i128);
         tb_sac.mint(&seeder, &1_000_000_i128);
-        amm.add_liquidity(&seeder, &1_000_000_i128, &1_000_000_i128, &0_i128, &u64::MAX);
+        amm.add_liquidity(
+            &seeder,
+            &1_000_000_i128,
+            &1_000_000_i128,
+            &0_i128,
+            &u64::MAX,
+        );
 
         let provider = Address::generate(env);
         ta_sac.mint(&provider, &500_000_i128);
@@ -4274,26 +4431,26 @@ mod prop_tests {
 
         let receiver_addr = env.register_contract(None, MockFlashLoanReceiver);
         let receiver = MockFlashLoanReceiverClient::new(&env, &receiver_addr);
-        receiver.initialize(&amm_addr, &true);
+        receiver.initialize(&amm_addr, &ta_client.address, &tb_client.address, &true);
 
         ta_sac.mint(&receiver_addr, &1_000_i128);
+        tb_sac.mint(&receiver_addr, &1_000_i128);
 
-        let fee = amm.flash_loan(
+        let fees = amm.flash_loan(
             &receiver_addr,
-            &ta_client.address,
             &100_000_i128,
+            &50_000_i128,
             &Bytes::new(&env),
         );
-        assert_eq!(fee, 500);
+        assert_eq!(fees, (500, 250));
 
         let info = amm.get_info();
         assert_eq!(info.reserve_a, 1_000_500);
-        assert_eq!(info.reserve_b, 1_000_000);
+        assert_eq!(info.reserve_b, 1_000_250);
         assert_eq!(info.flash_loan_fee_bps, 50);
     }
 
     #[test]
-    #[should_panic]
     fn test_flash_loan_failed_repayment_panics() {
         let (env, admin, amm_addr, lp_addr, _) = setup();
 
@@ -4324,14 +4481,10 @@ mod prop_tests {
 
         let receiver_addr = env.register_contract(None, MockFlashLoanReceiver);
         let receiver = MockFlashLoanReceiverClient::new(&env, &receiver_addr);
-        receiver.initialize(&amm_addr, &false);
+        receiver.initialize(&amm_addr, &ta_client.address, &tb_client.address, &false);
 
-        amm.flash_loan(
-            &receiver_addr,
-            &ta_client.address,
-            &100_000_i128,
-            &Bytes::new(&env),
-        );
+        let result = amm.try_flash_loan(&receiver_addr, &100_000_i128, &0_i128, &Bytes::new(&env));
+        assert_eq!(result, Err(Ok(AmmError::FlashLoanRepaymentFailed)));
     }
 
     #[test]
@@ -4353,75 +4506,83 @@ mod prop_tests {
 
         assert_eq!(amm.get_fee_info(), 30_i128);
         assert_eq!(amm.get_fee_info(), amm.get_info().fee_bps);
-     }
+    }
 
-     #[test]
-     fn test_emergency_withdraw() {
-         let (env, admin, amm_addr, lp_addr, _) = setup();
-         let (ta_client, ta_sac) = create_sac(&env, &admin);
-         let (tb_client, tb_sac) = create_sac(&env, &admin);
-         let amm = AmmPoolClient::new(&env, &amm_addr);
+    #[test]
+    fn test_emergency_withdraw() {
+        let (env, admin, amm_addr, lp_addr, _) = setup();
+        let (ta_client, ta_sac) = create_sac(&env, &admin);
+        let (tb_client, tb_sac) = create_sac(&env, &admin);
+        let amm = AmmPoolClient::new(&env, &amm_addr);
 
-         amm.initialize(
-             &admin,
-             &ta_client.address,
-             &tb_client.address,
-             &lp_addr,
-             &30_i128,
-             &admin,
-             &0_i128,
-         );
+        amm.initialize(
+            &admin,
+            &ta_client.address,
+            &tb_client.address,
+            &lp_addr,
+            &30_i128,
+            &admin,
+            &0_i128,
+        );
 
-         let provider = Address::generate(&env);
-         ta_sac.mint(&provider, &2_000_000_i128);
-         tb_sac.mint(&provider, &1_000_000_i128);
+        let provider = Address::generate(&env);
+        ta_sac.mint(&provider, &2_000_000_i128);
+        tb_sac.mint(&provider, &1_000_000_i128);
 
-         amm.add_liquidity(
-             &provider,
-             &2_000_000_i128,
-             &1_000_000_i128,
-             &0_i128,
-             &u64::MAX,
-         );
+        amm.add_liquidity(
+            &provider,
+            &2_000_000_i128,
+            &1_000_000_i128,
+            &0_i128,
+            &u64::MAX,
+        );
 
-         let info_before = amm.get_info();
-         assert_eq!(info_before.reserve_a, 2_000_000);
-         assert_eq!(info_before.reserve_b, 1_000_000);
+        let info_before = amm.get_info();
+        assert_eq!(info_before.reserve_a, 2_000_000);
+        assert_eq!(info_before.reserve_b, 1_000_000);
 
-         let recipient = Address::generate(&env);
-         let expected_ts = 99999_u64;
-         env.ledger().set_timestamp(expected_ts);
+        let recipient = Address::generate(&env);
+        let expected_ts = 99999_u64;
+        env.ledger().set_timestamp(expected_ts);
 
-         // Call emergency_withdraw
-         amm.emergency_withdraw(&recipient);
+        // Call emergency_withdraw
+        amm.emergency_withdraw(&recipient);
 
-         // Verify reserves are now zeroed
-         let info_after = amm.get_info();
-         assert_eq!(info_after.reserve_a, 0);
-         assert_eq!(info_after.reserve_b, 0);
+        // Verify reserves are now zeroed
+        let info_after = amm.get_info();
+        assert_eq!(info_after.reserve_a, 0);
+        assert_eq!(info_after.reserve_b, 0);
 
-         // Verify recipient received the tokens
-         assert_eq!(ta_client.balance(&recipient), 2_000_000);
-         assert_eq!(tb_client.balance(&recipient), 1_000_000);
+        // Verify recipient received the tokens
+        assert_eq!(ta_client.balance(&recipient), 2_000_000);
+        assert_eq!(tb_client.balance(&recipient), 1_000_000);
 
-         // Verify audit log values in contract storage from the contract context.
-         env.as_contract(&amm_addr, || {
-             let ts: u64 = env.storage().instance().get(&DataKey::EmergencyWithdrawTimestamp).unwrap();
-             let rec: Address = env.storage().instance().get(&DataKey::EmergencyWithdrawRecipient).unwrap();
-             assert_eq!(ts, expected_ts);
-             assert_eq!(rec, recipient);
-         });
-     }
+        // Verify audit log values in contract storage from the contract context.
+        env.as_contract(&amm_addr, || {
+            let ts: u64 = env
+                .storage()
+                .instance()
+                .get(&DataKey::EmergencyWithdrawTimestamp)
+                .unwrap();
+            let rec: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::EmergencyWithdrawRecipient)
+                .unwrap();
+            assert_eq!(ts, expected_ts);
+            assert_eq!(rec, recipient);
+        });
+    }
 
-     #[test]
-     #[should_panic]
-     fn test_emergency_withdraw_requires_admin_auth() {
-         let env = Env::default();
-         let amm_addr = env.register_contract(None, AmmPool);
-         let amm = AmmPoolClient::new(&env, &amm_addr);
-         let recipient = Address::generate(&env);
-         amm.emergency_withdraw(&recipient);
-     }
+    #[test]
+    #[should_panic]
+    fn test_emergency_withdraw_requires_admin_auth() {
+        let env = Env::default();
+        let amm_addr = env.register_contract(None, AmmPool);
+        let amm = AmmPoolClient::new(&env, &amm_addr);
+        let recipient = Address::generate(&env);
+        amm.emergency_withdraw(&recipient);
+    }
 
     #[test]
     #[should_panic]
@@ -4967,7 +5128,10 @@ mod prop_tests {
         //   amount_in_with_fee = 100_000 * (10000 - 30) = 997_000_000
         //   amount_out ≈ 90_661; effective_price ≈ 906_610
         //   price_impact_bps ≈ 934
-        assert!(large.price_impact_bps > 0, "price_impact_bps must be positive for large swap");
+        assert!(
+            large.price_impact_bps > 0,
+            "price_impact_bps must be positive for large swap"
+        );
 
         // Larger swap must have higher price impact than smaller swap.
         let medium = amm.simulate_swap(&ts.ta_addr, &10_000_i128);
