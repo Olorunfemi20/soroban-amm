@@ -24,6 +24,8 @@ struct Metric {
 #[contracttype]
 enum ReceiverDataKey {
     Amm,
+    TokenA,
+    TokenB,
     ShouldRepay,
 }
 
@@ -32,14 +34,33 @@ struct BenchFlashLoanReceiver;
 
 #[contractimpl]
 impl BenchFlashLoanReceiver {
-    pub fn initialize(env: Env, amm: Address, should_repay: bool) {
+    pub fn initialize(
+        env: Env,
+        amm: Address,
+        token_a: Address,
+        token_b: Address,
+        should_repay: bool,
+    ) {
         env.storage().instance().set(&ReceiverDataKey::Amm, &amm);
+        env.storage()
+            .instance()
+            .set(&ReceiverDataKey::TokenA, &token_a);
+        env.storage()
+            .instance()
+            .set(&ReceiverDataKey::TokenB, &token_b);
         env.storage()
             .instance()
             .set(&ReceiverDataKey::ShouldRepay, &should_repay);
     }
 
-    pub fn on_flash_loan(env: Env, token: Address, amount: i128, fee: i128, _data: Bytes) -> bool {
+    pub fn on_flash_loan(
+        env: Env,
+        amount_a: i128,
+        amount_b: i128,
+        fee_a: i128,
+        fee_b: i128,
+        _data: Bytes,
+    ) -> bool {
         let should_repay = env
             .storage()
             .instance()
@@ -47,11 +68,31 @@ impl BenchFlashLoanReceiver {
             .unwrap_or(false);
         if should_repay {
             let amm: Address = env.storage().instance().get(&ReceiverDataKey::Amm).unwrap();
-            StellarTokenClient::new(&env, &token).transfer(
-                &env.current_contract_address(),
-                &amm,
-                &(amount + fee),
-            );
+
+            if amount_a > 0 || fee_a > 0 {
+                let token_a: Address = env
+                    .storage()
+                    .instance()
+                    .get(&ReceiverDataKey::TokenA)
+                    .unwrap();
+                StellarTokenClient::new(&env, &token_a).transfer(
+                    &env.current_contract_address(),
+                    &amm,
+                    &(amount_a + fee_a),
+                );
+            }
+            if amount_b > 0 || fee_b > 0 {
+                let token_b: Address = env
+                    .storage()
+                    .instance()
+                    .get(&ReceiverDataKey::TokenB)
+                    .unwrap();
+                StellarTokenClient::new(&env, &token_b).transfer(
+                    &env.current_contract_address(),
+                    &amm,
+                    &(amount_b + fee_b),
+                );
+            }
         }
         true
     }
@@ -168,10 +209,10 @@ fn bench_amm_remove_liquidity(env: &Env) {
 }
 
 fn bench_amm_flash_loan(env: &Env) {
-    let (client, amm, token_a, _) = setup_amm(env, 50);
+    let (client, amm, token_a, token_b) = setup_amm(env, 50);
     let receiver_addr = env.register_contract(None, BenchFlashLoanReceiver);
     let receiver = BenchFlashLoanReceiverClient::new(env, &receiver_addr);
-    receiver.initialize(&amm, &true);
+    receiver.initialize(&amm, &token_a, &token_b, &true);
     StellarAssetClient::new(env, &token_a).mint(&receiver_addr, &1_000);
     env.budget().reset_default();
     client.flash_loan(&receiver_addr, &100_000_i128, &0_i128, &Bytes::new(env));
