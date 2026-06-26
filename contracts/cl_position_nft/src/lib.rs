@@ -298,9 +298,18 @@ impl ClPositionNft {
         }
     }
 
-    /// Returns the number of tokens owned by `owner`.
-    pub fn balance_of(env: Env, owner: Address) -> u32 {
-        Self::tokens_of(env, owner).len()
+    /// Returns the number of tokens owned by `owner` (`0` if none).
+    ///
+    /// Standard NFT count accessor. Unlike [`tokens_of`](Self::tokens_of), this
+    /// is a **pure read**: it does not bump the entry's TTL, so callers that
+    /// only need the count incur no storage-write cost. Returns `u64` to match
+    /// the conventional ERC-721 `balanceOf` signature.
+    pub fn balance_of(env: Env, owner: Address) -> u64 {
+        env.storage()
+            .persistent()
+            .get::<_, Vec<u64>>(&DataKey::OwnedTokens(owner))
+            .map(|v| v.len() as u64)
+            .unwrap_or(0)
     }
 
     /// Returns the total number of tokens ever minted (cumulative; not reduced by burns).
@@ -693,6 +702,26 @@ mod tests {
 
         client.burn(&id);
         assert_eq!(client.balance_of(&user), 0);
+    }
+
+    /// `balance_of` returns a `u64` count that tracks an owner's holdings and
+    /// stays consistent with `tokens_of`, including `0` for an unknown owner.
+    #[test]
+    fn balance_of_returns_u64_count_matching_tokens_of() {
+        let (env, client, _admin, pool, user) = setup();
+        let stranger = Address::generate(&env);
+
+        // Unknown owner: zero, no panic.
+        assert_eq!(client.balance_of(&stranger), 0_u64);
+
+        client.mint(&user, &pool, &-100, &100);
+        client.mint(&user, &pool, &-200, &200);
+        client.mint(&user, &pool, &-300, &300);
+
+        // Count matches the length of the full token list.
+        assert_eq!(client.balance_of(&user), 3_u64);
+        assert_eq!(client.balance_of(&user), client.tokens_of(&user).len() as u64);
+        assert_eq!(client.balance_of(&stranger), 0_u64);
     }
 
     #[test]
