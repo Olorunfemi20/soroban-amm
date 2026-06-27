@@ -561,6 +561,14 @@ impl Factory {
 
         env.storage().instance().set(&cl_key, &pool_addr);
 
+        let mut all: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::AllPools)
+            .unwrap_or_else(|| Vec::new(&env));
+        all.push_back(pool_addr.clone());
+        env.storage().instance().set(&DataKey::AllPools, &all);
+
         soroban_amm_sdk::emit_versioned_event!(
             env,
             (Symbol::new(&env, "cl_pool_created"),),
