@@ -716,9 +716,7 @@ impl LpToken {
         let entry_key = DataKey::LockEntry(holder.clone(), locker.clone());
         let entry: i128 = env.storage().persistent().get(&entry_key).unwrap_or(0);
         let new_entry = entry + amount;
-        env.storage()
-            .persistent()
-            .set(&entry_key, &new_entry);
+        env.storage().persistent().set(&entry_key, &new_entry);
         Self::bump_persistent(&env, &entry_key);
         if entry == 0 {
             Self::add_lock_holder(&env, &holder, &locker);
@@ -726,9 +724,7 @@ impl LpToken {
 
         let new_locked = locked + amount;
         let locked_key = DataKey::Locked(holder.clone());
-        env.storage()
-            .persistent()
-            .set(&locked_key, &new_locked);
+        env.storage().persistent().set(&locked_key, &new_locked);
         Self::bump_persistent(&env, &locked_key);
         emit_versioned_event!(
             env,
@@ -841,9 +837,7 @@ impl LpToken {
         }
 
         let new_entry = existing + amount;
-        env.storage()
-            .persistent()
-            .set(&entry_key, &new_entry);
+        env.storage().persistent().set(&entry_key, &new_entry);
         Self::bump_persistent(&env, &entry_key);
         Self::bump_persistent(&env, &DataKey::Locked(holder.clone()));
         if existing == 0 {
