@@ -1018,11 +1018,61 @@
               "fee_amount"
             ]
           }
+        ],
+        "initialized": [
+          {
+            "version": 1,
+            "topics": 1,
+            "shape": "tuple",
+            "fields": [
+              "admin",
+              "amm_wasm_hash",
+              "token_wasm_hash"
+            ]
+          }
+        ],
+        "cl_wasm_updated": [
+          {
+            "version": 1,
+            "topics": 1,
+            "shape": "tuple",
+            "fields": [
+              "old_wasm_hash",
+              "new_wasm_hash"
+            ]
+          }
+        ],
+        "rate_limit_set": [
+          {
+            "version": 1,
+            "topics": 1,
+            "shape": "tuple",
+            "fields": [
+              "old_limit",
+              "new_limit"
+            ]
+          }
         ]
       }
     },
     "governance": {
       "events": {
+        "initialized": [
+          {
+            "version": 1,
+            "topics": 1,
+            "shape": "tuple",
+            "fields": [
+              "admin",
+              "amm_pool",
+              "lp_token",
+              "voting_period_secs",
+              "timelock_secs",
+              "quorum_bps",
+              "min_proposer_stake_bps"
+            ]
+          }
+        ],
         "admin_nominated": [
           {
             "version": 1,
@@ -1051,6 +1101,39 @@
             "shape": "tuple",
             "fields": [
               "new_wasm_hash"
+            ]
+          }
+        ],
+        "quorum_decay_set": [
+          {
+            "version": 1,
+            "topics": 1,
+            "shape": "tuple",
+            "fields": [
+              "old_rate_bps_per_day",
+              "new_rate_bps_per_day"
+            ]
+          }
+        ],
+        "min_stake_set": [
+          {
+            "version": 1,
+            "topics": 1,
+            "shape": "tuple",
+            "fields": [
+              "old_min_proposer_stake_bps",
+              "new_min_proposer_stake_bps"
+            ]
+          }
+        ],
+        "timelock_set": [
+          {
+            "version": 1,
+            "topics": 1,
+            "shape": "tuple",
+            "fields": [
+              "old_timelock_secs",
+              "new_timelock_secs"
             ]
           }
         ],
@@ -1140,7 +1223,8 @@
             "topics": 1,
             "shape": "tuple",
             "fields": [
-              "multisig"
+              "old_multisig",
+              "new_multisig"
             ]
           }
         ],

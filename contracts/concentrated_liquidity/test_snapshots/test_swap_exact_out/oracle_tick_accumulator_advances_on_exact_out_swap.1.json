@@ -157,7 +157,7 @@
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 9999756
+                        "lo": 9999999
                       }
                     }
                   ]
@@ -634,6 +634,130 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "OracleObservation"
+                },
+                {
+                  "u32": 0
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "OracleObservation"
+                    },
+                    {
+                      "u32": 0
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "cumulative"
+                      },
+                      "val": {
+                        "i64": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "timestamp"
+                      },
+                      "val": {
+                        "u64": 0
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          3110400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "OracleObservation"
+                },
+                {
+                  "u32": 1
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "OracleObservation"
+                    },
+                    {
+                      "u32": 1
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "cumulative"
+                      },
+                      "val": {
+                        "i64": -500
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "timestamp"
+                      },
+                      "val": {
+                        "u64": 100
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          3110400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Position"
                 },
                 {
@@ -705,7 +829,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 205250302
+                          "lo": 205051662
                         }
                       }
                     },
@@ -885,7 +1009,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 205250302
+                          "lo": 205051662
                         }
                       }
                     },
@@ -896,7 +1020,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 205250302
+                          "lo": 205051662
                         }
                       }
                     }
@@ -983,7 +1107,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 205250302
+                          "lo": 205051662
                         }
                       }
                     },
@@ -994,7 +1118,7 @@
                       "val": {
                         "i128": {
                           "hi": -1,
-                          "lo": 18446744073504301314
+                          "lo": 18446744073504499954
                         }
                       }
                     }
@@ -1183,7 +1307,7 @@
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 205250302
+                            "lo": 205051662
                           }
                         }
                       },
@@ -1237,7 +1361,7 @@
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 13930529229744
+                            "lo": 13944024171942
                           }
                         }
                       },
@@ -1297,47 +1421,35 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "OraclePoint"
-                            },
-                            {
-                              "u64": 0
+                              "symbol": "OracleHeader"
                             }
                           ]
                         },
                         "val": {
-                          "i64": 0
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                          "map": [
                             {
-                              "symbol": "OraclePoint"
+                              "key": {
+                                "symbol": "cardinality"
+                              },
+                              "val": {
+                                "u32": 512
+                              }
                             },
                             {
-                              "u64": 100
-                            }
-                          ]
-                        },
-                        "val": {
-                          "i64": -500
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "OracleTimestamps"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "vec": [
-                            {
-                              "u64": 0
+                              "key": {
+                                "symbol": "count"
+                              },
+                              "val": {
+                                "u32": 2
+                              }
                             },
                             {
-                              "u64": 100
+                              "key": {
+                                "symbol": "index"
+                              },
+                              "val": {
+                                "u32": 1
+                              }
                             }
                           ]
                         }
@@ -1364,8 +1476,8 @@
                         },
                         "val": {
                           "u128": {
-                            "hi": 4293900094,
-                            "lo": 18037698978081940139
+                            "hi": 4293899061,
+                            "lo": 2704292352918510535
                           }
                         }
                       },
@@ -1471,7 +1583,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 89949075
+                          "lo": 89948832
                         }
                       }
                     },
@@ -1544,7 +1656,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 10050925
+                          "lo": 10051168
                         }
                       }
                     },
@@ -2546,7 +2658,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 9999756
+                    "lo": 9999999
                   }
                 }
               ]
@@ -2580,7 +2692,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 9999756
+                "lo": 9999999
               }
             }
           }
@@ -2732,13 +2844,13 @@
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 205250302
+                        "lo": 205051662
                       }
                     },
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 9999756
+                        "lo": 9999999
                       }
                     },
                     {
@@ -2776,7 +2888,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 9999756
+                    "lo": 9999999
                   }
                 },
                 {
@@ -3069,8 +3181,8 @@
                     },
                     {
                       "u128": {
-                        "hi": 4293921020,
-                        "lo": 9003197865393485651
+                        "hi": 4293920006,
+                        "lo": 17119301580280541008
                       }
                     },
                     {
@@ -3124,8 +3236,8 @@
                     },
                     {
                       "u128": {
-                        "hi": 4293921020,
-                        "lo": 9003197865393485651
+                        "hi": 4293920006,
+                        "lo": 17119301580280541008
                       }
                     },
                     {
@@ -3214,7 +3326,7 @@
                   "val": {
                     "i128": {
                       "hi": 0,
-                      "lo": 205250302
+                      "lo": 205051662
                     }
                   }
                 },
@@ -3232,8 +3344,8 @@
                   },
                   "val": {
                     "u128": {
-                      "hi": 4293921020,
-                      "lo": 9003197865393485651
+                      "hi": 4293920006,
+                      "lo": 17119301580280541008
                     }
                   }
                 },
@@ -3583,8 +3695,8 @@
                     },
                     {
                       "u128": {
-                        "hi": 4293900094,
-                        "lo": 18037698978081940139
+                        "hi": 4293899061,
+                        "lo": 2704292352918510535
                       }
                     },
                     {
@@ -3638,8 +3750,8 @@
                     },
                     {
                       "u128": {
-                        "hi": 4293900094,
-                        "lo": 18037698978081940139
+                        "hi": 4293899061,
+                        "lo": 2704292352918510535
                       }
                     },
                     {

@@ -44,7 +44,7 @@ Defined in [contracts/amm/src/lib.rs](../contracts/amm/src/lib.rs) as `AmmError`
 | Code | Symbol | Cause | Remedy |
 |------|--------|-------|--------|
 | 1 | `AlreadyInitialized` | `initialize` (or `initialize_with_flash_loan_fee`) was called on a pool that has already been set up. The presence of `DataKey::TokenA` in instance storage is the guard. | Deploy a fresh pool contract instead of re-initializing. |
-| 2 | `InvalidFeeBps` | A fee value was outside `[0, 10 000]` bps, or `protocol_fee_bps` exceeded `fee_bps`, or `new_fee_bps` was below the current `protocol_fee_bps`. | Ensure `0 ≤ protocol_fee_bps ≤ fee_bps ≤ 10 000`. |
+| 2 | `InvalidFeeBps` | A swap fee was outside `[0, 10 000)` bps (0 to 9,999 bps), a flash loan fee was outside `[0, 10 000]` bps, `protocol_fee_bps` exceeded `fee_bps`, `new_fee_bps` was below the current `protocol_fee_bps`, or `get_amount_in`/`get_amount_out` was called on a pool with `fee_bps >= 10_000`. | Ensure `0 ≤ protocol_fee_bps ≤ fee_bps < 10 000`. |
 | 3 | `InsufficientShares` | The LP share burn amount in `remove_liquidity` exceeded the provider's actual LP token balance. | Query `shares_of(provider)` first and cap the burn amount to that value. |
 | 4 | `DeadlineExceeded` | The `deadline` ledger timestamp passed before the transaction was included. | Re-submit with `deadline = current_ledger_timestamp + buffer`. |
 | 5 | `SlippageExceeded` | For swaps: `amount_out < min_out` or `required_in > max_in`. For `add_liquidity`: minted shares < `min_shares`. For `remove_liquidity`: `out_a < min_a` or `out_b < min_b`. | Widen slippage bounds or use `simulate_swap` / `get_amount_in` to recalculate before submitting. |
@@ -57,13 +57,16 @@ Defined in [contracts/amm/src/lib.rs](../contracts/amm/src/lib.rs) as `AmmError`
 | 12 | `NoPendingAdmin` | `accept_admin` was called when no admin transfer is in progress. | Call `propose_admin` first to nominate a successor. |
 | 13 | `WrongAdmin` | `accept_admin` was called by an address that does not match the pending nominee. | Have the correct address (the one passed to `propose_admin`) call `accept_admin`. |
 | 14 | `Reentrant` | A reentrant call was made into any fund-moving entry point — `swap`, `swap_exact_out`, `swap_fot`, `add_liquidity`, `add_liquidity_fot`, `remove_liquidity`, `remove_liquidity_one_sided`, `flash_loan`, `withdraw_protocol_fees`, or `emergency_withdraw` — while the pool-wide reentrancy lock (`DataKey::Locked`) was already held. Most commonly this is a flash-loan receiver's `on_flash_loan` callback calling back into the pool, or a malicious/fee-on-transfer token's `transfer` implementation calling back into the pool mid-swap. | Do not call any of the functions above from inside `on_flash_loan` or a token's own `transfer`/`transfer_from`. Perform all swaps and liquidity operations *before* or *after* the flash loan, not during the callback. Query `is_locked()` (formerly `flash_loan_locked()`, kept as a deprecated alias) to check whether the lock is currently held. If the lock is ever stranded, the admin (or, when a multisig is configured, `quorum` of its signers) can clear it with `force_unlock`. |
-| 15 | `CircuitBreaker` | The spot price deviated more than the configured threshold (default 5 000 bps = 50 %) from the value at the start of the block. The pool has been automatically paused. | Wait for the cooldown period to elapse (default 600 s) and call `try_circuit_breaker_recovery`, or have governance call `unpause`. |
+| 15 | `CircuitBreaker` | Legacy error code kept for ABI compatibility. Since #1094, price-deviation breaches during `swap`, `swap_exact_out`, `swap_fot`, `remove_liquidity_one_sided`, `flash_loan`, or `trip_circuit_breaker` durably pause the pool (`Paused = true`, `CircuitBreakerTriggeredAt = now`), emit `circuit_break`, and return a zero fill (`Ok(0)` or `Ok((0, 0))`) so the pause state is not rolled back; subsequent mutating calls return `Paused` (`6`). | Wait for the cooldown period to elapse (default 600 s) and call `try_circuit_breaker_recovery`, or have the admin/governance call `unpause`. |
 | 16 | `FotSlippage` | A fee-on-transfer token deducted fees resulting in fewer tokens received than the `min_received` guard (`received < min_received`). | Widen `min_received` threshold or trade using standard non-FoT tokens. |
 | 17 | `OracleDeviationExceeded` | Spot price deviated beyond configured oracle tolerance (`\|spot - oracle\| > max_deviation`). | Retry when spot price or oracle price stabilizes within configured tolerance. |
 | 18 | `FlashLoanRepaymentFailed` | Receiver contract failed to return borrowed tokens plus fee (`balance_after < balance_before + fee`). | Ensure `on_flash_loan` callback repays principal and fee in full. |
 | 19 | `AlreadyExecuted` | Emergency withdrawal multisig proposal was already executed (`proposal.executed == true`). | No action required; proposal has already been executed. |
 | 20 | `ProposalExpired` | Emergency withdrawal multisig proposal exceeded its validity window (`now > proposal.expires_at`). | Submit a new emergency withdrawal proposal. |
 | 21 | `NotInitialized` | A function that reads pool configuration (tokens, LP token, admin, fee settings) was called before `initialize`. Covers admin setters, liquidity, swaps, quotes, and the `get_info` / `get_fee_info` / `shares_of` views. | Call `initialize` first. |
+| 22 | `PoolDrained` | The pool has entered the terminal `Drained` state after an `emergency_withdraw` or `exec_multisig_emergency_wd` (#1095). All liquidity, swap, flash-loan, fee-withdrawal, unpause, recovery, and repeat emergency-withdrawal entrypoints are permanently disabled so pre-existing LP tokens cannot drain subsequent deposits. | Deploy a new pool contract; a drained pool is permanently retired. |
+| 23 | `QuorumNotMet` | `exec_multisig_emergency_wd` was called while the number of collected signer approvals was below `MultisigQuorum` (#1095). | Collect additional signer approvals via `approve_emergency_withdraw` until `approvals.len() >= quorum`. |
+| 24 | `NoPendingProposal` | `exec_multisig_emergency_wd` was called when no multisig emergency withdrawal proposal has been created (#1095). | Have a multisig signer call `propose_emergency_withdraw` first. |
 
 ---
 
@@ -74,7 +77,7 @@ Defined in [contracts/amm-sdk/src/types.rs](../contracts/amm-sdk/src/types.rs) a
 | Code | Symbol | Cause | Remedy |
 |------|--------|-------|--------|
 | 1 | `AlreadyInitialized` | `initialize` called on a pool that is already set up. | Deploy a fresh pool contract instead. |
-| 2 | `InvalidFeeBps` | Fee outside `[0, 10 000]` bps or protocol fee > swap fee. | Use a value in the accepted range. |
+| 2 | `InvalidFeeBps` | Swap fee outside `[0, 10 000)` bps, flash loan fee outside `[0, 10 000]`, or protocol fee > swap fee. | Use a value in the accepted range. |
 | 3 | `InsufficientShares` | LP burn amount exceeds caller's balance. | Reduce `shares` to ≤ `shares_of(provider)`. |
 | 4 | `DeadlineExceeded` | `deadline` ledger timestamp already passed. | Re-submit with a future deadline. |
 | 5 | `SlippageExceeded` | Output or input violated the slippage guard. | Widen `min_out` / `max_in` or retry later. |
@@ -87,13 +90,16 @@ Defined in [contracts/amm-sdk/src/types.rs](../contracts/amm-sdk/src/types.rs) a
 | 12 | `NoPendingAdmin` | `accept_admin` called without a prior `propose_admin`. | Call `propose_admin` first. |
 | 13 | `WrongAdmin` | `accept_admin` caller ≠ pending nominee. | Have correct address call `accept_admin`. |
 | 14 | `Reentrant` | Reentrant call detected during flash loan callback. | Do not call pool functions from `on_flash_loan`. |
-| 15 | `CircuitBreaker` | Price moved > threshold, pool auto-paused. | Wait for cooldown or governance action. |
+| 15 | `CircuitBreaker` | Legacy circuit-breaker code (breaches now durably pause and return zero fill; see `AmmError::CircuitBreaker`). | Wait for cooldown or governance action. |
 | 16 | `FotSlippage` | Fee-on-transfer token deducted more than `min_received`. | Widen `min_received` or use non-FoT token. |
 | 17 | `OracleDeviationExceeded` | Spot price deviated beyond oracle tolerance. | Retry when oracle price stabilises. |
 | 18 | `FlashLoanRepaymentFailed` | Receiver did not repay borrowed amounts + fees. | Ensure `on_flash_loan` repays in full. |
 | 19 | `AlreadyExecuted` | Multisig emergency withdrawal was already executed. | No action — proposal already carried out. |
 | 20 | `ProposalExpired` | Multisig emergency withdrawal proposal has expired. | Submit a new proposal. |
 | 21 | `NotInitialized` | Pool configuration was read before `initialize`. | Call `initialize` first. |
+| 22 | `PoolDrained` | Pool entered terminal `Drained` state after emergency withdrawal (#1095). | Deploy a new pool; drained pools are permanently retired. |
+| 23 | `QuorumNotMet` | Multisig emergency withdrawal approvals are below `MultisigQuorum` (#1095). | Collect enough signer approvals before executing. |
+| 24 | `NoPendingProposal` | `exec_multisig_emergency_wd` called with no active multisig proposal (#1095). | Call `propose_emergency_withdraw` first. |
 
 ---
 
@@ -168,7 +174,7 @@ Defined in [contracts/concentrated_liquidity/src/lib.rs](../contracts/concentrat
 | 15 | `TickNotInitialized` | A swap crossed into a tick that has no liquidity (never been used by any position). | Ensure positions cover the full swap range, or use a smaller swap amount. |
 | 16 | `InvalidToken` | `token_in` is not `token_a` or `token_b`. | Check `get_info()` for valid token addresses. |
 | 17 | `RangeOrderInRange` | `place_range_order` called when current tick is inside `[lower_tick, upper_tick)`. | Select a tick range strictly above or below current tick. |
-| 18 | `OracleDeviationExceeded` | Spot price deviated beyond configured oracle tolerance during swap, or configured oracle returned non-positive price or confidence 0. | Wait for oracle price and confidence to stabilize or adjust tolerance. |
+| 18 | OracleDeviationExceeded | Spot price deviated beyond configured oracle tolerance during swap, or configured oracle returned non-positive price or confidence 0. | Wait for oracle price and confidence to stabilize or adjust tolerance. |
 | 19 | `NftNotConfigured` | Tokenization attempted when no NFT contract address is set in storage. | Call `set_nft_contract` with a valid position NFT contract. |
 | 20 | `NotNftOwner` | Caller is not current owner of position NFT. | Call method from NFT owner account. |
 | 21 | `NftContractChangeBlocked` | Admin attempted NFT contract change while tokenized positions exist. | Untokenize/burn active position NFTs before changing contract. |
@@ -176,6 +182,8 @@ Defined in [contracts/concentrated_liquidity/src/lib.rs](../contracts/concentrat
 | 23 | `ExactOutNotFullyFilled` | `swap_exact_out` or `quote_exact_out` (#696) could not fill the requested `amount_out` in full before running out of initialized ticks or hitting `sqrt_price_limit_x96`. Exact-out has no meaningful partial fill. | Reduce `amount_out`, widen `sqrt_price_limit_x96`, or add liquidity to the range being traded against. |
 | 24 | `NotInitialized` | A function that depends on pool state (tokens, admin, current tick) was called before `initialize`. This covers the admin setters, every liquidity/swap/quote entrypoint, and the `current_tick`, `get_tokens`, and `fee_bps` views. | Call `initialize` first. |
 | 25 | `MathOverflow` | A position amount or liquidity figure computed by `mint_position`, `mint_position_single_token`, `quote_single_token_deposit`, `modify_position`, `burn_position` or `quote_position` does not fit in an `i128`, or an intermediate of its 256-bit evaluation does not fit in a `u128`. Reported instead of a truncated value (#963). | Use a smaller amount or liquidity, or a wider tick range. |
+| 26 | `ObservationTooOld` | `observe(seconds_ago)` requested a timestamp earlier than the oldest observation retained in the persistent oracle ring buffer (or `seconds_ago > now`) (#1101). | Query a smaller `seconds_ago` within the retained ring-buffer window, or have the admin grow the ring capacity via `set_oracle_cardinality`. |
+| 27 | `InvalidOracleCardinality` | `set_oracle_cardinality` was called with `0`, a value smaller than the current `cardinality`, or a value exceeding `MAX_ORACLE_CARDINALITY` (`2048`) (#1101). | Pass a cardinality in `[current_cardinality, 2048]`. |
 
 `swap_exact_out(env, sender, zero_for_one, amount_out, sqrt_price_limit_x96,
 max_amount_in, deadline)` (#696) is the mirror of `swap`: it fixes the
@@ -239,7 +247,7 @@ Defined in [contracts/factory/src/lib.rs](../contracts/factory/src/lib.rs) as `F
 | Code | Symbol | Cause | Remedy |
 |------|--------|-------|--------|
 | 1 | `AlreadyInitialized` | `initialize` called twice. | Only initialize the factory once after deployment. |
-| 2 | `InvalidFeeBps` | Fee outside `[0, 10 000]`. | Correct the fee value. |
+| 2 | `InvalidFeeBps` | Fee outside `[0, 10 000)`. | Correct the fee value to `[0, 9 999]`. |
 | 3 | `PoolAlreadyExists` | `create_pool` was called for a `(token_a, token_b)` pair that already has an AMM pool. | Use `get_pool` to retrieve the existing pool address. |
 | 4 | `ClPoolAlreadyExists` | `create_cl_pool` was called for a pair/fee that already has a CL pool. | Use `get_cl_pool` to retrieve the existing address. |
 | 5 | `ClWasmNotSet` | Tried to create a CL pool before the CL WASM hash was registered via `set_cl_wasm`. | Call `set_cl_wasm` with the uploaded CL contract hash first. |
@@ -290,10 +298,10 @@ Defined in [contracts/governance/src/lib.rs](../contracts/governance/src/lib.rs)
 |------|--------|-------|--------|
 | 1 | `AlreadyInitialized` | Governance initialized twice. | Deploy a new governance contract. |
 | 2 | `InvalidVotingPeriod` | Voting period is zero or below the minimum. | Use a period ≥ 1 ledger. |
-| 3 | `InvalidTimelock` | Timelock duration is below the minimum. | Increase the timelock value. |
-| 4 | `InvalidQuorumBps` | Quorum outside `(0, 10 000]`. | Use a positive bps value ≤ 10 000. |
-| 5 | `InvalidProposerStake` | Proposer stake threshold is zero. | Set a positive minimum stake. |
-| 6 | `InvalidFeeBps` | Fee value out of range. | Use `[0, 10 000]`. |
+| 3 | `InvalidTimelock` | `initialize` or `set_timelock_delay` was given a timelock outside `[MIN_TIMELOCK_SECS, MAX_TIMELOCK_SECS]` (`1..=2_592_000` seconds, up to 30 days), or timestamp arithmetic in `propose` / `veto` overflowed (#1105). | Use a timelock in `1..=2_592_000` seconds. |
+| 4 | `InvalidQuorumBps` | `initialize` quorum outside `(0, 10 000]`, or `set_quorum_decay_bps_per_day` outside `[0, 10 000]` (#1105). | Use `1..=10_000` for base quorum and `0..=10_000` for daily decay rate. |
+| 5 | `InvalidProposerStake` | `initialize` or `set_min_proposer_stake_bps` was given a proposer stake threshold outside `[0, 10 000]` bps (#1105). | Use a value in `0..=10_000` bps. |
+| 6 | `InvalidFeeBps` | Fee value out of range. | Use `[0, 10 000)` for swap fees or `[0, 10 000]` for flash loan fees. |
 | 7 | `ZeroTotalSupply` | Vote weight computed on a zero LP supply. | Seed the pool with liquidity before creating proposals. |
 | 8 | `InsufficientStake` | Proposer's LP stake is below `min_proposer_stake`. | Acquire more LP tokens before proposing. |
 | 9 | `ProposalNotFound` | Referenced proposal ID does not exist. | Use `get_proposal` to verify the ID. |

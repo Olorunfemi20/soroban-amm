@@ -159,7 +159,7 @@
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 999340
+                        "lo": 999999
                       }
                     }
                   ]
@@ -218,7 +218,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 334112930
+                    "lo": 333850249
                   }
                 }
               ]
@@ -497,6 +497,68 @@
             "ext": "v0"
           },
           6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "OracleObservation"
+                },
+                {
+                  "u32": 0
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "OracleObservation"
+                    },
+                    {
+                      "u32": 0
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "cumulative"
+                      },
+                      "val": {
+                        "i64": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "timestamp"
+                      },
+                      "val": {
+                        "u64": 1000
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          3110400
         ]
       ],
       [
@@ -820,29 +882,35 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "OraclePoint"
+                              "symbol": "OracleHeader"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "cardinality"
+                              },
+                              "val": {
+                                "u32": 512
+                              }
                             },
                             {
-                              "u64": 1000
-                            }
-                          ]
-                        },
-                        "val": {
-                          "i64": 0
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                              "key": {
+                                "symbol": "count"
+                              },
+                              "val": {
+                                "u32": 1
+                              }
+                            },
                             {
-                              "symbol": "OracleTimestamps"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "vec": [
-                            {
-                              "u64": 1000
+                              "key": {
+                                "symbol": "index"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
                             }
                           ]
                         }
@@ -2149,7 +2217,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 999340
+                    "lo": 999999
                   }
                 }
               ]
@@ -2183,7 +2251,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 999340
+                "lo": 999999
               }
             }
           }
@@ -2335,13 +2403,13 @@
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 334112930
+                        "lo": 333850249
                       }
                     },
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 999340
+                        "lo": 999999
                       }
                     },
                     {
@@ -2379,7 +2447,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 999340
+                    "lo": 999999
                   }
                 },
                 {
@@ -2575,7 +2643,7 @@
                   "val": {
                     "i128": {
                       "hi": 0,
-                      "lo": 334112930
+                      "lo": 333850249
                     }
                   }
                 },
@@ -2655,7 +2723,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 334112930
+                    "lo": 333850249
                   }
                 }
               ]
@@ -2709,7 +2777,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 999340
+                "lo": 999999
               }
             }
           }
@@ -2798,7 +2866,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 999340
+                    "lo": 999999
                   }
                 }
               ]
@@ -2832,7 +2900,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 999340
+                "lo": 999999
               }
             }
           }
@@ -2984,13 +3052,13 @@
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 334112930
+                        "lo": 333850249
                       }
                     },
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 999340
+                        "lo": 999999
                       }
                     },
                     {
@@ -3028,7 +3096,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 999340
+                    "lo": 999999
                   }
                 },
                 {
