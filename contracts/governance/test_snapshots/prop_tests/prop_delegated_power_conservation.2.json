@@ -79,7 +79,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 7357
+                    "lo": 9333
                   }
                 }
               ]
@@ -104,7 +104,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 2788
+                    "lo": 499
                   }
                 }
               ]
@@ -129,7 +129,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 6301
+                    "lo": 4101
                   }
                 }
               ]
@@ -551,7 +551,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 7357
+                    "lo": 9333
                   }
                 }
               }
@@ -599,7 +599,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 2788
+                    "lo": 499
                   }
                 }
               }
@@ -647,7 +647,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 6301
+                    "lo": 4101
                   }
                 }
               }
@@ -709,7 +709,7 @@
                           "val": {
                             "i128": {
                               "hi": 0,
-                              "lo": 7357
+                              "lo": 9333
                             }
                           }
                         },
@@ -784,7 +784,7 @@
                           "val": {
                             "i128": {
                               "hi": 0,
-                              "lo": 2788
+                              "lo": 499
                             }
                           }
                         },
@@ -859,7 +859,7 @@
                           "val": {
                             "i128": {
                               "hi": 0,
-                              "lo": 6301
+                              "lo": 4101
                             }
                           }
                         },
@@ -1112,7 +1112,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 7357
+                    "lo": 9333
                   }
                 }
               }
@@ -1166,7 +1166,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 2788
+                    "lo": 499
                   }
                 }
               }
@@ -1220,7 +1220,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 6301
+                    "lo": 4101
                   }
                 }
               }
@@ -1415,7 +1415,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 7357
+                    "lo": 9333
                   }
                 }
               }
@@ -1463,7 +1463,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 2788
+                    "lo": 499
                   }
                 }
               }
@@ -1511,7 +1511,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 6301
+                    "lo": 4101
                   }
                 }
               }
@@ -1615,7 +1615,7 @@
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 16446
+                            "lo": 13933
                           }
                         }
                       }
@@ -2615,7 +2615,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 7357
+                    "lo": 9333
                   }
                 }
               }
@@ -2669,7 +2669,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 2788
+                    "lo": 499
                   }
                 }
               }
@@ -2723,7 +2723,7 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 6301
+                    "lo": 4101
                   }
                 }
               }
@@ -2857,7 +2857,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 16446
+                          "lo": 13933
                         }
                       }
                     },
@@ -2926,7 +2926,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 16446
+                          "lo": 13933
                         }
                       }
                     }
@@ -3512,6 +3512,46 @@
       "event": {
         "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "initialized"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u32": 1
+                },
+                {
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                    },
+                    {
+                      "string": "AMM LP"
+                    },
+                    {
+                      "string": "ALP"
+                    },
+                    {
+                      "u32": 7
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
         "type_": "diagnostic",
         "body": {
           "v0": {
@@ -3949,6 +3989,40 @@
       "event": {
         "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "set_locker"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u32": 1
+                },
+                {
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
         "type_": "diagnostic",
         "body": {
           "v0": {
@@ -3992,10 +4066,39 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 7357
+                    "lo": 9333
                   }
                 }
               ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "mint"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+              }
+            ],
+            "data": {
+              "i128": {
+                "hi": 0,
+                "lo": 9333
+              }
             }
           }
         }
@@ -4049,10 +4152,39 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 2788
+                    "lo": 499
                   }
                 }
               ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "mint"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+              }
+            ],
+            "data": {
+              "i128": {
+                "hi": 0,
+                "lo": 499
+              }
             }
           }
         }
@@ -4106,10 +4238,39 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 6301
+                    "lo": 4101
                   }
                 }
               ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "mint"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON"
+              }
+            ],
+            "data": {
+              "i128": {
+                "hi": 0,
+                "lo": 4101
+              }
             }
           }
         }
@@ -4398,7 +4559,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 16446
+                "lo": 13933
               }
             }
           }
@@ -4450,7 +4611,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 2788
+                "lo": 499
               }
             }
           }
@@ -4625,7 +4786,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 2788
+                "lo": 499
               }
             }
           }
@@ -4677,7 +4838,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 2788
+                "lo": 499
               }
             }
           }
@@ -4736,7 +4897,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 7357
+                "lo": 9333
               }
             }
           }
@@ -4788,7 +4949,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 7357
+                "lo": 9333
               }
             }
           }
@@ -4847,7 +5008,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 6301
+                "lo": 4101
               }
             }
           }
@@ -4899,7 +5060,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 6301
+                "lo": 4101
               }
             }
           }
@@ -4933,8 +5094,60 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 2788
+                    "lo": 499
                   }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "lock"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u32": 1
+                },
+                {
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 499
+                      }
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 499
+                      }
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 499
+                      }
+                    }
+                  ]
                 }
               ]
             }
@@ -4990,8 +5203,60 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 7357
+                    "lo": 9333
                   }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "lock"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u32": 1
+                },
+                {
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 9333
+                      }
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 9333
+                      }
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 9333
+                      }
+                    }
+                  ]
                 }
               ]
             }
@@ -5047,8 +5312,60 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 6301
+                    "lo": 4101
                   }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "lock"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u32": 1
+                },
+                {
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 4101
+                      }
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 4101
+                      }
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 4101
+                      }
+                    }
+                  ]
                 }
               ]
             }
@@ -5113,7 +5430,7 @@
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 16446
+                        "lo": 13933
                       }
                     }
                   ]
@@ -5276,7 +5593,7 @@
                   "val": {
                     "i128": {
                       "hi": 0,
-                      "lo": 16446
+                      "lo": 13933
                     }
                   }
                 },
@@ -5345,7 +5662,7 @@
                   "val": {
                     "i128": {
                       "hi": 0,
-                      "lo": 16446
+                      "lo": 13933
                     }
                   }
                 }
@@ -5400,7 +5717,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 2788
+                "lo": 499
               }
             }
           }
@@ -5452,7 +5769,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 7357
+                "lo": 9333
               }
             }
           }
@@ -5504,7 +5821,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 6301
+                "lo": 4101
               }
             }
           }
